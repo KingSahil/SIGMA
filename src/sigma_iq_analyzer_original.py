@@ -36,9 +36,10 @@ class sigma_iq_analyzer(gr.top_block, Qt.QWidget):
         self.setWindowTitle("SIGMA IQ Analyzer")
         qtgui.util.check_set_qss()
         try:
-            self.setWindowIcon(Qt.QIcon.fromTheme('gnuradio-grc'))
-        except BaseException as exc:
-            print(f"Qt GUI: Could not set Icon: {str(exc)}", file=sys.stderr)
+            from sigma_theme import create_sigma_icon
+            self.setWindowIcon(create_sigma_icon())
+        except Exception:
+            pass
         self.top_scroll_layout = Qt.QVBoxLayout()
         self.setLayout(self.top_scroll_layout)
         self.top_scroll = Qt.QScrollArea()

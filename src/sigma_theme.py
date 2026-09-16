@@ -1,226 +1,292 @@
 """
 SIGMA - Signal Intelligence & Generalized Modulation Analyzer
-FL Studio Aesthetic — Clean, Minimal, Slate-Charcoal Dark Theme
+Big, Modern, Google Stitch / Material Design 3 Dark Theme
+Spacious, highly readable, large touch targets, bold typography.
 """
 
 COLORS = {
-    # FL Studio Authentic Slate & Charcoal Palette
-    "bg_main": "#1f242a",          # FL Studio main workspace background
-    "bg_card": "#272f38",          # FL Studio panel / window background
-    "bg_card_header": "#2f3844",   # FL Studio header tone
-    "bg_surface_dark": "#161a1f",  # FL Studio recessed well / plot canvas
-    "bg_cell": "#1e242b",          # Metric cell background
+    # Surfaces
+    "bg_main": "#0d1117",          # Deep slate workspace
+    "bg_card": "#161b24",          # Large container card
+    "bg_card_inner": "#1d2430",    # Nested stat / metric cell
+    "bg_plot": "#10141d",          # Dark plot canvas
+    "bg_accent_soft": "rgba(56, 189, 248, 0.12)",
     
     # Borders
-    "border": "#35404e",           # Subtle slate border
-    "border_light": "#435163",     # Border hover / divider
-    "border_dark": "#14171b",      # Inset shadow line
+    "border": "#273142",           # Soft modern border
+    "border_light": "#364359",     # Hover border
     
     # Text
-    "text_primary": "#e6edf3",     # Crisp text
-    "text_secondary": "#95a3b3",   # Muted slate labels
-    "text_muted": "#5d6a79",       # Subdued / pending
+    "text_primary": "#f8fafc",     # Crisp bold white
+    "text_secondary": "#94a3b8",   # Soft slate gray
+    "text_muted": "#64748b",       # Subdued
     
-    # FL Studio Signature Accent Colors
-    "fl_lime": "#54db54",          # FL Green (Active LED / Analysis)
-    "fl_cyan": "#00d2ff",          # In-Phase I / Peak Frequency
-    "fl_magenta": "#e056fd",       # Quadrature Q
-    "fl_orange": "#ff9f1c",        # Amber / Modulation / Highlight
+    # Material / Google Stitch Accents
+    "accent_primary": "#38bdf8",   # Google Sky Blue
+    "accent_blue": "#60a5fa",      # Electric blue
+    "accent_success": "#34d399",   # Fresh emerald green
+    "accent_audio": "#f43f5e",     # Vibrant coral for audio playback
+    "accent_audio_active": "#10b981", # Emerald when audio is playing
+    "accent_warn": "#fbbf24",      # Amber
+    "accent_i": "#38bdf8",         # In-Phase I (Cyan)
+    "accent_q": "#f472b6",         # Quadrature Q (Rose/Magenta)
 }
 
-FL_CLEAN_QSS = f"""
+BIG_MATERIAL_QSS = f"""
 /* =========================================================================
-   SIGMA - FL STUDIO AESTHETIC THEME (CLEAN & MINIMAL)
+   SIGMA — BIG, SPACIOUS, MODERN GOOGLE STITCH UI
    ========================================================================= */
 
 QMainWindow, QWidget#CentralWidget {{
     background-color: {COLORS['bg_main']};
     color: {COLORS['text_primary']};
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
-    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Roboto", sans-serif;
+    font-size: 14px;
 }}
 
-/* Cards & Panels */
-QFrame.SigmaCard {{
+/* Main Big Cards */
+QFrame.SigmaBigCard {{
     background-color: {COLORS['bg_card']};
     border: 1px solid {COLORS['border']};
-    border-radius: 4px;
+    border-radius: 12px;
+    padding: 10px 14px;
 }}
 
-/* Card Header Strip */
-QFrame.CardHeader {{
-    background-color: {COLORS['bg_card_header']};
-    border-bottom: 1px solid {COLORS['border']};
-    border-top-left-radius: 3px;
-    border-top-right-radius: 3px;
-    padding: 5px 12px;
-}}
-
+/* Section Titles (Big, Clean, Readable) */
 QLabel.SectionTitle {{
     font-size: 11px;
-    font-weight: 700;
-    color: {COLORS['text_primary']};
-    letter-spacing: 0.8px;
+    font-weight: 800;
+    color: {COLORS['accent_primary']};
+    letter-spacing: 1.2px;
     text-transform: uppercase;
+}}
+
+/* High-Contrast Floating HUD Overlay Badge for Plot Inspection */
+QLabel.HudOverlayBadge {{
+    background-color: #0b0f17;
+    border: 1px solid #273142;
+    border-radius: 6px;
+    color: {COLORS['accent_primary']};
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+}}
+QLabel.HudOverlayBadge:hover {{
+    border-color: {COLORS['accent_primary']};
+    background-color: #111722;
 }}
 
 /* Header Typography */
 QLabel.AppTitle {{
-    font-size: 20px;
-    font-weight: 800;
+    font-size: 24px;
+    font-weight: 900;
     color: {COLORS['text_primary']};
     letter-spacing: 1.5px;
 }}
 
 QLabel.AppSubtitle {{
-    font-size: 11px;
+    font-size: 12px;
     color: {COLORS['text_secondary']};
-    letter-spacing: 0.3px;
+    letter-spacing: 0.4px;
 }}
 
-/* Status Indicator */
-QLabel.StatusAnalyzing {{
-    background-color: rgba(84, 219, 84, 0.15);
-    color: {COLORS['fl_lime']};
-    border: 1px solid rgba(84, 219, 84, 0.4);
-    border-radius: 12px;
-    padding: 3px 12px;
-    font-size: 11px;
-    font-weight: 700;
-}}
 
-QLabel.StatusReady {{
-    background-color: rgba(149, 163, 179, 0.15);
-    color: {COLORS['text_secondary']};
-    border: 1px solid {COLORS['border']};
-    border-radius: 12px;
-    padding: 3px 12px;
-    font-size: 11px;
-    font-weight: 600;
-}}
-
-/* FL Studio Tactile Buttons */
+/* Big Tactile Buttons (Google Material Style) */
 QPushButton {{
-    background-color: #2c3540;
+    background-color: {COLORS['bg_card_inner']};
     color: {COLORS['text_primary']};
     border: 1px solid {COLORS['border_light']};
-    border-bottom: 2px solid {COLORS['border_dark']};
-    border-radius: 3px;
-    padding: 5px 14px;
-    font-size: 11px;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-size: 13px;
     font-weight: 700;
 }}
 
 QPushButton:hover {{
-    background-color: #374250;
-    border-color: {COLORS['fl_cyan']};
+    background-color: #273042;
+    border-color: {COLORS['accent_primary']};
     color: #ffffff;
 }}
 
 QPushButton:pressed {{
-    background-color: {COLORS['bg_surface_dark']};
-    border-top: 2px solid {COLORS['border_dark']};
-    border-bottom: 1px solid {COLORS['border_light']};
+    background-color: {COLORS['bg_plot']};
 }}
 
 QPushButton.PrimaryBtn {{
-    background-color: rgba(0, 210, 255, 0.14);
-    color: {COLORS['fl_cyan']};
-    border: 1px solid {COLORS['fl_cyan']};
-    border-bottom: 2px solid #006680;
+    background-color: {COLORS['accent_primary']};
+    color: #0b111a;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 18px;
+    font-weight: 800;
 }}
 
 QPushButton.PrimaryBtn:hover {{
-    background-color: rgba(0, 210, 255, 0.28);
+    background-color: #60cdfa;
+    color: #000000;
+}}
+
+/* View Mode Selector Segmented Buttons */
+QPushButton.ViewToggleBtn {{
+    background-color: {COLORS['bg_card_inner']};
+    color: {COLORS['text_secondary']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 7px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 700;
+}}
+
+QPushButton.ViewToggleBtn:hover {{
+    background-color: #222b3a;
+    color: #ffffff;
+    border-color: {COLORS['accent_primary']};
+}}
+
+QPushButton.ViewToggleBtnActive {{
+    background-color: rgba(56, 189, 248, 0.18);
+    color: {COLORS['accent_primary']};
+    border: 1.5px solid {COLORS['accent_primary']};
+    border-radius: 7px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 800;
+}}
+
+/* Audio Playback Button (Special Large Accent) */
+QPushButton.AudioBtnIdle {{
+    background-color: rgba(244, 63, 94, 0.15);
+    color: #fb7185;
+    border: 1.5px solid rgba(244, 63, 94, 0.45);
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 800;
+}}
+
+QPushButton.AudioBtnIdle:hover {{
+    background-color: rgba(244, 63, 94, 0.3);
+    color: #ffffff;
+    border-color: #f43f5e;
+}}
+
+QPushButton.AudioBtnPlaying {{
+    background-color: rgba(52, 211, 153, 0.25);
+    color: #34d399;
+    border: 1.5px solid #34d399;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 800;
+}}
+
+QPushButton.AudioBtnPlaying:hover {{
+    background-color: rgba(52, 211, 153, 0.4);
     color: #ffffff;
 }}
 
-/* Input Section Details */
+/* File Display (Big & Prominent) */
 QLabel.FileName {{
-    font-size: 15px;
-    font-weight: 700;
-    color: {COLORS['fl_cyan']};
+    font-size: 17px;
+    font-weight: 800;
+    color: {COLORS['accent_primary']};
     font-family: "Consolas", monospace;
 }}
 
-QLabel.FileDetailText {{
+QLabel.FileDetailBadge {{
+    background-color: {COLORS['bg_card_inner']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 6px;
+    padding: 4px 10px;
     font-size: 11px;
+    font-weight: 600;
     color: {COLORS['text_secondary']};
 }}
 
-/* Metric Cells */
-QFrame.MetricCell {{
-    background-color: {COLORS['bg_cell']};
+/* Big Metric Cards (Massive readability) */
+QFrame.BigMetricCell {{
+    background-color: {COLORS['bg_card_inner']};
     border: 1px solid {COLORS['border']};
-    border-radius: 3px;
+    border-radius: 8px;
     padding: 6px 10px;
 }}
 
-QFrame.MetricCell:hover {{
+QFrame.BigMetricCell:hover {{
     border-color: {COLORS['border_light']};
 }}
 
-QLabel.MetricLabel {{
-    font-size: 9px;
+QLabel.BigMetricLabel {{
+    font-size: 10px;
     font-weight: 700;
     color: {COLORS['text_secondary']};
     letter-spacing: 0.6px;
     text-transform: uppercase;
 }}
 
-QLabel.MetricValue {{
-    font-family: "Consolas", "Courier New", monospace;
-    font-size: 13px;
-    font-weight: 700;
+QLabel.BigMetricValue {{
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 16px;
+    font-weight: 800;
     color: {COLORS['text_primary']};
 }}
 
-QLabel.MetricValueHighlight {{
-    font-family: "Consolas", "Courier New", monospace;
-    font-size: 13px;
-    font-weight: 700;
-    color: {COLORS['fl_cyan']};
-}}
-
-/* Modulation Box */
-QFrame.ModulationBox {{
-    background-color: {COLORS['bg_cell']};
-    border: 1px solid {COLORS['border']};
-    border-radius: 4px;
-    padding: 12px 14px;
-}}
-
-QLabel.ModulationState {{
+QLabel.BigMetricValueHighlight {{
+    font-family: "Consolas", "JetBrains Mono", monospace;
     font-size: 16px;
     font-weight: 800;
-    color: {COLORS['fl_orange']};
+    color: {COLORS['accent_primary']};
+}}
+
+/* Big Modulation Card */
+QFrame.BigModulationBox {{
+    background-color: {COLORS['bg_card_inner']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 8px;
+    padding: 8px 12px;
+}}
+
+QLabel.BigModulationState {{
+    font-size: 18px;
+    font-weight: 900;
+    color: {COLORS['accent_warn']};
     letter-spacing: 0.5px;
 }}
 
-QLabel.ModulationConfidence {{
-    font-size: 11px;
+QLabel.BigModulationConfidence {{
+    font-size: 12px;
     color: {COLORS['text_secondary']};
     font-family: "Consolas", monospace;
-}}
-
-/* Compact Bottom Pipeline */
-QLabel.PipelineStepDone {{
-    color: {COLORS['fl_lime']};
-    font-size: 11px;
-    font-weight: 700;
-}}
-
-QLabel.PipelineStepPending {{
-    color: {COLORS['text_muted']};
-    font-size: 11px;
     font-weight: 600;
 }}
 
-QLabel.PipelineArrow {{
+/* Bottom Big Pipeline Stepper */
+QFrame.BigPipelineBar {{
+    background-color: {COLORS['bg_card']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 12px;
+    padding: 10px 20px;
+}}
+
+QLabel.BigPipelineStepDone {{
+    color: {COLORS['accent_success']};
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}}
+
+QLabel.BigPipelineStepPending {{
+    color: {COLORS['text_muted']};
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}}
+
+QLabel.BigPipelineArrow {{
     color: {COLORS['border_light']};
-    font-size: 12px;
+    font-size: 16px;
     font-weight: bold;
-    padding: 0 6px;
+    padding: 0 10px;
 }}
 
 /* Dialog & Input fields */
@@ -230,28 +296,106 @@ QDialog {{
 }}
 
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
-    background-color: {COLORS['bg_surface_dark']};
+    background-color: {COLORS['bg_plot']};
     color: {COLORS['text_primary']};
-    border: 1px solid {COLORS['border']};
-    border-radius: 3px;
-    padding: 5px 8px;
+    border: 1px solid {COLORS['border_light']};
+    border-radius: 8px;
+    padding: 8px 12px;
     font-family: "Consolas", monospace;
-    font-size: 11px;
+    font-size: 14px;
 }}
 
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
-    border-color: {COLORS['fl_orange']};
+    border-color: {COLORS['accent_primary']};
 }}
 
 /* Splitter */
 QSplitter::handle {{
     background-color: {COLORS['bg_main']};
-    height: 6px;
+    height: 10px;
 }}
 
 QSplitter::handle:hover {{
-    background-color: {COLORS['fl_cyan']};
+    background-color: {COLORS['accent_primary']};
+}}
+
+/* ScrollArea and Sleek Modern Scrollbars */
+QScrollArea {{
+    background-color: transparent;
+    border: none;
+}}
+
+QScrollBar:vertical {{
+    background-color: {COLORS['bg_main']};
+    width: 8px;
+    margin: 0px;
+    border-radius: 4px;
+}}
+
+QScrollBar::handle:vertical {{
+    background-color: {COLORS['border']};
+    min-height: 30px;
+    border-radius: 4px;
+}}
+
+QScrollBar::handle:vertical:hover {{
+    background-color: {COLORS['accent_primary']};
+}}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+
+QScrollBar:horizontal {{
+    background-color: {COLORS['bg_main']};
+    height: 8px;
+    margin: 0px;
+    border-radius: 4px;
+}}
+
+QScrollBar::handle:horizontal {{
+    background-color: {COLORS['border']};
+    min-width: 30px;
+    border-radius: 4px;
+}}
+
+QScrollBar::handle:horizontal:hover {{
+    background-color: {COLORS['accent_primary']};
+}}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0px;
 }}
 """
 
-MAIN_QSS = FL_CLEAN_QSS
+MAIN_QSS = BIG_MATERIAL_QSS
+
+
+def create_sigma_icon():
+    """Generates a modern, high-resolution SIGMA brand icon."""
+    try:
+        from PyQt5 import QtGui, QtCore
+        icon = QtGui.QIcon()
+        for size in (16, 24, 32, 48, 64, 128, 256):
+            pix = QtGui.QPixmap(size, size)
+            pix.fill(QtCore.Qt.transparent)
+            p = QtGui.QPainter(pix)
+            p.setRenderHint(QtGui.QPainter.Antialiasing)
+            # Rounded background tile
+            p.setBrush(QtGui.QBrush(QtGui.QColor("#10141d")))
+            pen_w = max(1.0, size / 32.0)
+            p.setPen(QtGui.QPen(QtGui.QColor("#38bdf8"), pen_w))
+            radius = max(2.0, size * 0.22)
+            margin = max(1.0, size * 0.04)
+            p.drawRoundedRect(QtCore.QRectF(margin, margin, size - 2 * margin, size - 2 * margin), radius, radius)
+            # Greek letter Sigma (bold electric blue)
+            font = QtGui.QFont("Segoe UI", int(size * 0.52), QtGui.QFont.Bold)
+            p.setFont(font)
+            p.setPen(QtGui.QColor("#38bdf8"))
+            p.drawText(QtCore.QRectF(0, 0, size, size), QtCore.Qt.AlignCenter, "Σ")
+            p.end()
+            icon.addPixmap(pix)
+        return icon
+    except Exception:
+        from PyQt5 import QtGui
+        return QtGui.QIcon()

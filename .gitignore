@@ -1,1 +1,18 @@
-__pycache__
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary converted & playback audio caches
+*_converted.iq
+*_audio_preview.wav
+*_playback.wav
+*_audible.wav
+data/**/*_converted.iq
+data/**/*_audio_preview.wav
+data/**/*_playback.wav
+data/**/*_audible.wav
+
+# OS artifacts
+.DS_Store
+Thumbs.db
