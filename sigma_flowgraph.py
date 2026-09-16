@@ -1,7 +1,7 @@
 """
 SIGMA - Signal Intelligence & Generalized Modulation Analyzer
 GNU Radio Flowgraph Module (gr.top_block wrapper)
-Preserves the exact DSP pipeline with FL Studio DAW dark-theme styling.
+Clean, Minimal Signal Processing Pipeline
 """
 
 import os
@@ -18,34 +18,34 @@ from gnuradio.filter import firdes
 import pmt
 
 
-def apply_fl_studio_sink_theme(widget):
-    """Recursively styles GNU Radio QtGUI / Qwt widgets to match FL Studio aesthetics."""
+def apply_clean_sink_theme(widget):
+    """Styles GNU Radio QtGUI / Qwt widgets with clean FL Studio slate-charcoal aesthetics."""
     if not widget:
         return
     for child in widget.findChildren(QtWidgets.QWidget):
         cname = child.metaObject().className()
         if "PlotCanvas" in cname or "DisplayPlot" in cname:
-            child.setStyleSheet("background-color: #15181d; border: 1px solid #282f37; border-radius: 3px;")
+            child.setStyleSheet("background-color: #161a1f; border: 1px solid #28303a; border-radius: 3px;")
             pal = child.palette()
-            pal.setColor(QtGui.QPalette.Window, QtGui.QColor("#15181d"))
-            pal.setColor(QtGui.QPalette.Base, QtGui.QColor("#15181d"))
+            pal.setColor(QtGui.QPalette.Window, QtGui.QColor("#161a1f"))
+            pal.setColor(QtGui.QPalette.Base, QtGui.QColor("#161a1f"))
             child.setPalette(pal)
         elif "Scale" in cname:
             pal = child.palette()
-            pal.setColor(QtGui.QPalette.WindowText, QtGui.QColor("#8e9aa8"))
-            pal.setColor(QtGui.QPalette.Text, QtGui.QColor("#8e9aa8"))
+            pal.setColor(QtGui.QPalette.WindowText, QtGui.QColor("#95a3b3"))
+            pal.setColor(QtGui.QPalette.Text, QtGui.QColor("#95a3b3"))
             child.setPalette(pal)
-            child.setStyleSheet("color: #8e9aa8; font-family: 'Consolas', monospace; font-size: 10px;")
+            child.setStyleSheet("color: #95a3b3; font-family: 'Consolas', monospace; font-size: 10px;")
         elif "TextLabel" in cname:
-            child.setStyleSheet("color: #cfd8dc; font-weight: 700; background: transparent; font-size: 11px;")
+            child.setStyleSheet("color: #e6edf3; font-weight: 700; background: transparent; font-size: 11px;")
         elif "Legend" in cname:
-            child.setStyleSheet("background-color: #191d23; color: #b0bec5; border: 1px solid #2c343f; border-radius: 2px;")
+            child.setStyleSheet("background-color: #1e242b; color: #95a3b3; border: 1px solid #2e3844; border-radius: 2px;")
 
 
 class SigmaFlowgraph(gr.top_block):
     """
     Encapsulates the GNU Radio signal processing graph.
-    Exposes real PyQt5 widgets for Time Domain, Frequency Spectrum, and Constellation.
+    Exposes clean PyQt5 widgets for Time Domain, Frequency Spectrum, and Constellation.
     """
 
     def __init__(self, filepath="signal.iq", samp_rate=1000000, center_freq=0.0, repeat=True):
@@ -64,7 +64,7 @@ class SigmaFlowgraph(gr.top_block):
         self.time_sink = qtgui.time_sink_c(
             1024,                # Buffer size
             self.samp_rate,      # Sample rate
-            "WAVE CANDY — TIME DOMAIN (I / Q)",    # Title
+            "",                  # Clean title
             1,                   # Inputs
             None                 # Parent
         )
@@ -79,12 +79,12 @@ class SigmaFlowgraph(gr.top_block):
         self.time_sink.enable_control_panel(False)
         self.time_sink.enable_stem_plot(False)
 
-        # Labels for I (FL Cyan) and Q (FL Magenta)
-        self.time_sink.set_line_label(0, "I (In-Phase)")
+        # Labels for I and Q
+        self.time_sink.set_line_label(0, "I")
         self.time_sink.set_line_color(0, "cyan")
         self.time_sink.set_line_width(0, 1)
 
-        self.time_sink.set_line_label(1, "Q (Quadrature)")
+        self.time_sink.set_line_label(1, "Q")
         self.time_sink.set_line_color(1, "magenta")
         self.time_sink.set_line_width(1, 1)
 
@@ -94,7 +94,7 @@ class SigmaFlowgraph(gr.top_block):
             window.WIN_BLACKMAN_hARRIS,  # Window type
             self.center_freq,            # Center frequency
             self.samp_rate,              # Bandwidth
-            "FRUITY PARAMETRIC — SPECTRUM / PSD",  # Title
+            "",                          # Clean title
             1,                           # Inputs
             None                         # Parent
         )
@@ -108,14 +108,14 @@ class SigmaFlowgraph(gr.top_block):
         self.freq_sink.enable_axis_labels(True)
         self.freq_sink.enable_control_panel(False)
         self.freq_sink.set_fft_window_normalized(False)
-        self.freq_sink.set_line_label(0, "IQ Spectrum")
-        self.freq_sink.set_line_color(0, "green")
+        self.freq_sink.set_line_label(0, "Spectrum")
+        self.freq_sink.set_line_color(0, "cyan")
         self.freq_sink.set_line_width(0, 1)
 
         # Constellation Sink
         self.constellation_sink = qtgui.const_sink_c(
             1024,             # Display size
-            "VECTOR SCOPE — CONSTELLATION",  # Title
+            "",               # Clean title
             1,                # Inputs
             None              # Parent
         )
@@ -127,7 +127,7 @@ class SigmaFlowgraph(gr.top_block):
         self.constellation_sink.enable_grid(True)
         self.constellation_sink.enable_axis_labels(True)
         self.constellation_sink.disable_legend()
-        self.constellation_sink.set_line_label(0, "IQ Samples")
+        self.constellation_sink.set_line_label(0, "Samples")
         self.constellation_sink.set_line_color(0, "cyan")
         self.constellation_sink.set_line_marker(0, 0)
         self.constellation_sink.set_line_width(0, 1)
@@ -137,10 +137,10 @@ class SigmaFlowgraph(gr.top_block):
         self.freq_sink_widget = sip.wrapinstance(self.freq_sink.qwidget(), Qt.QWidget)
         self.const_sink_widget = sip.wrapinstance(self.constellation_sink.qwidget(), Qt.QWidget)
 
-        # Apply FL Studio styling to the sinks
-        apply_fl_studio_sink_theme(self.time_sink_widget)
-        apply_fl_studio_sink_theme(self.freq_sink_widget)
-        apply_fl_studio_sink_theme(self.const_sink_widget)
+        # Apply Clean Theme to sinks
+        apply_clean_sink_theme(self.time_sink_widget)
+        apply_clean_sink_theme(self.freq_sink_widget)
+        apply_clean_sink_theme(self.const_sink_widget)
 
         ##################################################
         # 2. File Source & Connections
