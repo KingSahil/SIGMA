@@ -1,13 +1,14 @@
 """
 SIGMA - Signal Intelligence & Generalized Modulation Analyzer
 Main Application Window (PyQt5)
-SIH 2026 Engineering Prototype
+FL Studio Inspired Digital Audio / SDR Workstation Design
 """
 
 import os
 import sys
+import random
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 
 from sigma_theme import COLORS, MAIN_QSS
 from sigma_analyzer_core import SignalMetadata
@@ -15,24 +16,24 @@ from sigma_flowgraph import SigmaFlowgraph
 
 
 class SettingsDialog(QtWidgets.QDialog):
-    """Settings dialog for RF configuration."""
+    """FL Studio Styled Settings Dialog for RF configuration."""
 
     def __init__(self, parent=None, samp_rate=1000000, center_freq=0.0):
         super().__init__(parent)
-        self.setWindowTitle("SIGMA - System Configuration")
-        self.setMinimumWidth(380)
+        self.setWindowTitle("SIGMA — Project Audio & SDR Configuration")
+        self.setMinimumWidth(400)
         self.setStyleSheet(MAIN_QSS)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(14)
         layout.setContentsMargins(18, 18, 18, 18)
 
-        title = QtWidgets.QLabel("RF HARDWARE & DSP SETTINGS")
-        title.setProperty("class", "PanelHeader")
+        title = QtWidgets.QLabel("RF HARDWARE & DSP ENGINE CONFIG")
+        title.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {COLORS['fl_orange']}; letter-spacing: 1px;")
         layout.addWidget(title)
 
         form = QtWidgets.QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(12)
 
         # Sample Rate
         self.rate_spin = QtWidgets.QDoubleSpinBox()
@@ -40,7 +41,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.rate_spin.setValue(samp_rate)
         self.rate_spin.setSingleStep(100e3)
         self.rate_spin.setSuffix(" S/s")
-        form.addRow("Sample Rate:", self.rate_spin)
+        form.addRow("Master Sample Rate:", self.rate_spin)
 
         # Center Frequency
         self.freq_spin = QtWidgets.QDoubleSpinBox()
@@ -48,7 +49,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.freq_spin.setValue(center_freq)
         self.freq_spin.setSingleStep(10e3)
         self.freq_spin.setSuffix(" Hz")
-        form.addRow("Center Frequency:", self.freq_spin)
+        form.addRow("Master Center Freq:", self.freq_spin)
 
         layout.addLayout(form)
 
@@ -64,13 +65,84 @@ class SettingsDialog(QtWidgets.QDialog):
         return self.rate_spin.value(), self.freq_spin.value()
 
 
+class VUMeterWidget(QtWidgets.QWidget):
+    """FL Studio styled LED Bar VU Meter with peak hold."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(120, 26)
+        self.setMaximumHeight(32)
+        self.level = 0.72
+        self.peak = 0.85
+        self.is_active = True
+
+    def set_level(self, level, peak=None):
+        self.level = max(0.0, min(1.0, level))
+        if peak is not None:
+            self.peak = max(0.0, min(1.0, peak))
+        elif self.level > self.peak:
+            self.peak = self.level
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+
+        # Background well
+        painter.setPen(QtGui.QColor(COLORS['border_dark']))
+        painter.setBrush(QtGui.QColor(COLORS['bg_surface_dark']))
+        painter.drawRoundedRect(0, 0, w, h, 3, 3)
+
+        if not self.is_active:
+            return
+
+        # Segments: 20 LED bars
+        num_bars = 20
+        gap = 2
+        bar_w = max(2, int((w - 8 - (num_bars - 1) * gap) / num_bars))
+        active_bars = int(self.level * num_bars)
+        peak_bar = int(self.peak * num_bars)
+
+        start_x = 4
+        bar_h = h - 8
+        bar_y = 4
+
+        for i in range(num_bars):
+            bx = start_x + i * (bar_w + gap)
+            frac = i / float(num_bars)
+
+            # FL Studio LED Color stops: Green -> Yellow/Amber -> Red
+            if frac < 0.65:
+                on_color = QtGui.QColor(COLORS['fl_lime'])
+                off_color = QtGui.QColor(25, 45, 30)
+            elif frac < 0.85:
+                on_color = QtGui.QColor(COLORS['fl_amber'])
+                off_color = QtGui.QColor(50, 40, 15)
+            else:
+                on_color = QtGui.QColor(COLORS['fl_red'])
+                off_color = QtGui.QColor(55, 20, 25)
+
+            if i <= active_bars:
+                painter.fillRect(bx, bar_y, bar_w, bar_h, on_color)
+            elif i == peak_bar:
+                painter.fillRect(bx, bar_y, bar_w, bar_h, QtGui.QColor("#ffffff"))
+            else:
+                painter.fillRect(bx, bar_y, bar_w, bar_h, off_color)
+
+
 class SigmaMainWindow(QtWidgets.QMainWindow):
-    """Main desktop interface for the SIGMA system."""
+    """
+    Main desktop interface for the SIGMA system.
+    FL Studio Inspired Digital Audio / SDR Workstation Design.
+    """
 
     def __init__(self, initial_file="signal.iq"):
         super().__init__()
-        self.setWindowTitle("SIGMA — Signal Intelligence & Generalized Modulation Analyzer")
-        self.resize(1440, 920)
+        self.setWindowTitle("SIGMA — Signal Intelligence & Generalized Modulation Analyzer [FL SDR Studio]")
+        self.resize(1480, 960)
 
         # Application state
         self.current_file = initial_file if os.path.exists(initial_file) else "signal.iq"
@@ -92,202 +164,419 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             center_freq=self.center_freq
         )
 
-        # Set stylesheet
+        # Apply FL Studio Stylesheet
         self.setStyleSheet(MAIN_QSS)
 
         # Build UI
+        self._init_menu_bar()
         self._init_ui()
         self._update_all_displays()
 
-        # Start GNU Radio flowgraph
+        # Start Flowgraph
         self.flowgraph.start()
         self.flowgraph.flowgraph_started.set()
 
+        # Dynamic VU Meter & LED Animation Timer
+        self.anim_timer = QTimer(self)
+        self.anim_timer.setInterval(80)
+        self.anim_timer.timeout.connect(self._animate_live_meters)
+        self.anim_timer.start()
+
+    # =========================================================================
+    # Top FL Studio Menu Bar
+    # =========================================================================
+    def _init_menu_bar(self):
+        menubar = self.menuBar()
+
+        # File
+        file_menu = menubar.addMenu("FILE")
+        act_open_iq = QtWidgets.QAction("📂 Open IQ File...", self)
+        act_open_iq.triggered.connect(self._load_iq_file)
+        file_menu.addAction(act_open_iq)
+
+        act_open_wav = QtWidgets.QAction("🎵 Open WAV Audio...", self)
+        act_open_wav.triggered.connect(self._load_wav_file)
+        file_menu.addAction(act_open_wav)
+
+        file_menu.addSeparator()
+        act_reset = QtWidgets.QAction("🔄 Revert to Default (signal.iq)", self)
+        act_reset.triggered.connect(self._reset_file)
+        file_menu.addAction(act_reset)
+
+        act_exit = QtWidgets.QAction("✕ Exit SIGMA", self)
+        act_exit.triggered.connect(self.close)
+        file_menu.addAction(act_exit)
+
+        # Edit
+        edit_menu = menubar.addMenu("EDIT")
+        edit_menu.addAction("Cut IQ Region")
+        edit_menu.addAction("Copy Samples")
+        edit_menu.addAction("Paste")
+
+        # View
+        view_menu = menubar.addMenu("VIEW")
+        view_menu.addAction("Wave Candy (Time Domain)")
+        view_menu.addAction("Fruity Parametric (Spectrum)")
+        view_menu.addAction("Vector Scope (Constellation)")
+        view_menu.addAction("Mixer Insert Chain")
+
+        # DSP
+        dsp_menu = menubar.addMenu("DSP")
+        act_run = QtWidgets.QAction("Toggle DSP Engine (Space)", self)
+        act_run.triggered.connect(self._toggle_run_stop)
+        dsp_menu.addAction(act_run)
+
+        act_loop = QtWidgets.QAction("Toggle Loop Playback", self)
+        act_loop.triggered.connect(self._toggle_loop)
+        dsp_menu.addAction(act_loop)
+
+        # Options
+        opt_menu = menubar.addMenu("OPTIONS")
+        act_settings = QtWidgets.QAction("⚙ Audio / SDR Settings...", self)
+        act_settings.triggered.connect(self._open_settings)
+        opt_menu.addAction(act_settings)
+
+        # Help
+        help_menu = menubar.addMenu("HELP")
+        help_menu.addAction("SIGMA SIH 2026 Manual")
+        help_menu.addAction("About FL SDR Studio")
+
+    # =========================================================================
+    # Main UI Construction
+    # =========================================================================
     def _init_ui(self):
         central = QtWidgets.QWidget(self)
         central.setObjectName("CentralWidget")
         self.setCentralWidget(central)
 
         main_layout = QtWidgets.QVBoxLayout(central)
-        main_layout.setContentsMargins(12, 10, 12, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 6, 10, 8)
+        main_layout.setSpacing(8)
 
-        # 1. Header Bar
-        main_layout.addWidget(self._build_header())
+        # 1. Master FL Studio Transport Bar
+        main_layout.addWidget(self._build_transport_bar())
 
-        # 2. Top Info Row (Input Panel + Signal Overview)
-        main_layout.addLayout(self._build_top_row())
+        # 2. Deck: Channel Rack & Inspector
+        main_layout.addLayout(self._build_channel_deck())
 
-        # 3. Main Visualizers (Splitter: Graphs Left & Right)
+        # 3. Main Center Workstation (Visualizer Windows Splitter)
         graphs_splitter = QtWidgets.QSplitter(Qt.Vertical)
         graphs_splitter.setChildrenCollapsible(False)
 
-        # Middle: Time Domain & Frequency Spectrum
-        mid_row = QtWidgets.QHBoxLayout()
-        mid_row.setSpacing(10)
-        mid_row.addWidget(self._build_time_domain_panel(), 1)
-        mid_row.addWidget(self._build_freq_panel(), 1)
-        mid_widget = QtWidgets.QWidget()
-        mid_widget.setLayout(mid_row)
-        graphs_splitter.addWidget(mid_widget)
+        # Upper Deck: Time Domain & Frequency Spectrum
+        upper_row = QtWidgets.QHBoxLayout()
+        upper_row.setSpacing(8)
+        upper_row.addWidget(self._build_time_domain_window(), 1)
+        upper_row.addWidget(self._build_freq_window(), 1)
+        upper_widget = QtWidgets.QWidget()
+        upper_widget.setLayout(upper_row)
+        graphs_splitter.addWidget(upper_widget)
 
-        # Lower: Constellation & Signal Analysis
-        low_row = QtWidgets.QHBoxLayout()
-        low_row.setSpacing(10)
-        low_row.addWidget(self._build_constellation_panel(), 1)
-        low_row.addWidget(self._build_analysis_panel(), 1)
-        low_widget = QtWidgets.QWidget()
-        low_widget.setLayout(low_row)
-        graphs_splitter.addWidget(low_widget)
+        # Lower Deck: Constellation & Signal Analyzer
+        lower_row = QtWidgets.QHBoxLayout()
+        lower_row.setSpacing(8)
+        lower_row.addWidget(self._build_constellation_window(), 1)
+        lower_row.addWidget(self._build_analyzer_window(), 1)
+        lower_widget = QtWidgets.QWidget()
+        lower_widget.setLayout(lower_row)
+        graphs_splitter.addWidget(lower_widget)
 
         main_layout.addWidget(graphs_splitter, 1)
 
-        # 4. Bottom Processing Pipeline
-        main_layout.addWidget(self._build_pipeline_bar())
+        # 4. Bottom Mixer FX Insert Chain
+        main_layout.addWidget(self._build_mixer_rack())
 
     # =========================================================================
-    # Header Section
+    # Window Wrapper Helper (FL Studio Window Header & Frame)
     # =========================================================================
-    def _build_header(self):
-        header_frame = QtWidgets.QFrame()
-        header_frame.setProperty("class", "SigmaPanel")
-        layout = QtWidgets.QHBoxLayout(header_frame)
-        layout.setContentsMargins(14, 8, 14, 8)
+    def _build_fl_window(self, title, badge_text, badge_color, inner_widget, subtitle=""):
+        frame = QtWidgets.QFrame()
+        frame.setProperty("class", "FLWindow")
+        layout = QtWidgets.QVBoxLayout(frame)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
 
-        # Project Branding
-        brand_layout = QtWidgets.QVBoxLayout()
-        brand_layout.setSpacing(2)
+        # Header Bar
+        header = QtWidgets.QFrame()
+        header.setProperty("class", "FLWindowHeader")
+        h_lay = QtWidgets.QHBoxLayout(header)
+        h_lay.setContentsMargins(8, 3, 8, 3)
+        h_lay.setSpacing(8)
 
-        title_label = QtWidgets.QLabel("SIGMA")
-        title_label.setProperty("class", "HeaderTitle")
-        brand_layout.addWidget(title_label)
+        # Color strip dot
+        dot = QtWidgets.QLabel("●")
+        dot.setStyleSheet(f"color: {badge_color}; font-size: 11px;")
+        h_lay.addWidget(dot)
 
-        sub_label = QtWidgets.QLabel("Signal Intelligence & Generalized Modulation Analyzer")
-        sub_label.setProperty("class", "HeaderSubtitle")
-        brand_layout.addWidget(sub_label)
+        # Title
+        t_lbl = QtWidgets.QLabel(title)
+        t_lbl.setProperty("class", "FLWindowTitle")
+        h_lay.addWidget(t_lbl)
 
-        layout.addLayout(brand_layout)
-        layout.addStretch(1)
+        # Badge
+        badge = QtWidgets.QLabel(badge_text)
+        badge.setProperty("class", "FLWindowBadge")
+        badge.setStyleSheet(f"background-color: {badge_color}; color: #000000;")
+        h_lay.addWidget(badge)
 
-        # Controls & Status
-        ctrl_layout = QtWidgets.QHBoxLayout()
-        ctrl_layout.setSpacing(10)
+        h_lay.addStretch(1)
 
-        # Status indicator
-        self.status_pill = QtWidgets.QLabel("● SYSTEM ONLINE")
-        self.status_pill.setProperty("class", "StatusPillOnline")
-        ctrl_layout.addWidget(self.status_pill)
+        if subtitle:
+            sub = QtWidgets.QLabel(subtitle)
+            sub.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px; font-family: 'Consolas', monospace;")
+            h_lay.addWidget(sub)
 
-        # Run / Stop Toggle Button
-        self.run_stop_btn = QtWidgets.QPushButton("⏹ Stop DSP")
-        self.run_stop_btn.setProperty("class", "PrimaryButton")
-        self.run_stop_btn.clicked.connect(self._toggle_run_stop)
-        ctrl_layout.addWidget(self.run_stop_btn)
+        # Window controls mockup (FL Studio style)
+        min_btn = QtWidgets.QLabel("–")
+        min_btn.setStyleSheet(f"color: {COLORS['text_muted']}; font-weight: bold; padding: 0 4px;")
+        cls_btn = QtWidgets.QLabel("✕")
+        cls_btn.setStyleSheet(f"color: {COLORS['text_muted']}; font-weight: bold; padding: 0 4px;")
+        h_lay.addWidget(min_btn)
+        h_lay.addWidget(cls_btn)
 
-        # Continuous Loop Toggle
-        self.loop_btn = QtWidgets.QPushButton("🔁 Loop: ON")
-        self.loop_btn.clicked.connect(self._toggle_loop)
-        ctrl_layout.addWidget(self.loop_btn)
+        layout.addWidget(header)
 
-        # Settings Button
-        self.settings_btn = QtWidgets.QPushButton("⚙ Settings")
-        self.settings_btn.clicked.connect(self._open_settings)
-        ctrl_layout.addWidget(self.settings_btn)
+        # Body container
+        body = QtWidgets.QWidget()
+        body_lay = QtWidgets.QVBoxLayout(body)
+        body_lay.setContentsMargins(8, 6, 8, 6)
+        body_lay.addWidget(inner_widget)
+        layout.addWidget(body, 1)
 
-        layout.addLayout(ctrl_layout)
-        return header_frame
+        return frame
 
     # =========================================================================
-    # Top Information Row (Input Panel & Signal Overview)
+    # 1. Master FL Studio Transport Bar
     # =========================================================================
-    def _build_top_row(self):
-        layout = QtWidgets.QHBoxLayout()
+    def _build_transport_bar(self):
+        bar = QtWidgets.QFrame()
+        bar.setProperty("class", "FLWindow")
+        layout = QtWidgets.QHBoxLayout(bar)
+        layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
 
-        # 1. File Input Panel
-        input_frame = QtWidgets.QFrame()
-        input_frame.setProperty("class", "SigmaPanel")
-        in_layout = QtWidgets.QVBoxLayout(input_frame)
-        in_layout.setContentsMargins(12, 10, 12, 10)
-        in_layout.setSpacing(8)
+        # Brand / Logo
+        brand_box = QtWidgets.QHBoxLayout()
+        brand_box.setSpacing(6)
+        logo = QtWidgets.QLabel("🎛️")
+        logo.setStyleSheet("font-size: 18px;")
+        brand_box.addWidget(logo)
 
-        in_title = QtWidgets.QLabel("INPUT SOURCE")
-        in_title.setProperty("class", "PanelHeader")
-        in_layout.addWidget(in_title)
+        brand_text = QtWidgets.QVBoxLayout()
+        brand_text.setSpacing(0)
+        t1 = QtWidgets.QLabel("SIGMA 2.0")
+        t1.setStyleSheet(f"font-weight: 800; font-size: 13px; letter-spacing: 1.5px; color: {COLORS['text_primary']};")
+        t2 = QtWidgets.QLabel("SDR WORKSTATION")
+        t2.setStyleSheet(f"font-size: 9px; font-weight: 700; letter-spacing: 1px; color: {COLORS['fl_orange']};")
+        brand_text.addWidget(t1)
+        brand_text.addWidget(t2)
+        brand_box.addLayout(brand_text)
+        layout.addLayout(brand_box)
 
-        # Grid of input parameters
+        # Vertical separator
+        layout.addWidget(self._make_vsep())
+
+        # Transport Buttons (FL Studio DAW Style)
+        trans_box = QtWidgets.QHBoxLayout()
+        trans_box.setSpacing(6)
+
+        # Play / Pause
+        self.btn_play = QtWidgets.QPushButton("▶ PLAY")
+        self.btn_play.setProperty("class", "FLTransportBtn FLPlayActive")
+        self.btn_play.clicked.connect(self._toggle_run_stop)
+        trans_box.addWidget(self.btn_play)
+
+        # Stop
+        self.btn_stop = QtWidgets.QPushButton("⏹ STOP")
+        self.btn_stop.setProperty("class", "FLTransportBtn")
+        self.btn_stop.clicked.connect(self._force_stop)
+        trans_box.addWidget(self.btn_stop)
+
+        # Loop
+        self.btn_loop = QtWidgets.QPushButton("🔁 SONG LOOP")
+        self.btn_loop.setProperty("class", "FLTransportBtn")
+        self.btn_loop.setStyleSheet(f"color: {COLORS['fl_orange']};")
+        self.btn_loop.clicked.connect(self._toggle_loop)
+        trans_box.addWidget(self.btn_loop)
+
+        # Rewind
+        self.btn_rewind = QtWidgets.QPushButton("⏮ REW")
+        self.btn_rewind.setProperty("class", "FLTransportBtn")
+        self.btn_rewind.clicked.connect(self._reset_file)
+        trans_box.addWidget(self.btn_rewind)
+
+        layout.addLayout(trans_box)
+        layout.addWidget(self._make_vsep())
+
+        # Digital LCD Readouts (Digital Clock & Sample Counter)
+        lcd_row = QtWidgets.QHBoxLayout()
+        lcd_row.setSpacing(8)
+
+        # Time / Position LCD
+        lcd_time = QtWidgets.QFrame()
+        lcd_time.setProperty("class", "FLLcdBox")
+        lt_lay = QtWidgets.QVBoxLayout(lcd_time)
+        lt_lay.setContentsMargins(8, 2, 8, 2)
+        lt_lay.setSpacing(0)
+        lbl_t_title = QtWidgets.QLabel("TIME / POS")
+        lbl_t_title.setProperty("class", "FLLcdLabel")
+        self.lbl_lcd_time = QtWidgets.QLabel("00:00:50.00")
+        self.lbl_lcd_time.setProperty("class", "FLLcdValue")
+        lt_lay.addWidget(lbl_t_title)
+        lt_lay.addWidget(self.lbl_lcd_time)
+        lcd_row.addWidget(lcd_time)
+
+        # Sample Rate LCD
+        lcd_rate = QtWidgets.QFrame()
+        lcd_rate.setProperty("class", "FLLcdBox")
+        lr_lay = QtWidgets.QVBoxLayout(lcd_rate)
+        lr_lay.setContentsMargins(8, 2, 8, 2)
+        lr_lay.setSpacing(0)
+        lbl_r_title = QtWidgets.QLabel("SAMPLE CLOCK")
+        lbl_r_title.setProperty("class", "FLLcdLabel")
+        self.lbl_lcd_rate = QtWidgets.QLabel("1.00 MSPS")
+        self.lbl_lcd_rate.setProperty("class", "FLLcdValueAmber")
+        lr_lay.addWidget(lbl_r_title)
+        lr_lay.addWidget(self.lbl_lcd_rate)
+        lcd_row.addWidget(lcd_rate)
+
+        # Center Freq LCD
+        lcd_freq = QtWidgets.QFrame()
+        lcd_freq.setProperty("class", "FLLcdBox")
+        lf_lay = QtWidgets.QVBoxLayout(lcd_freq)
+        lf_lay.setContentsMargins(8, 2, 8, 2)
+        lf_lay.setSpacing(0)
+        lbl_f_title = QtWidgets.QLabel("TUNING FREQ")
+        lbl_f_title.setProperty("class", "FLLcdLabel")
+        self.lbl_lcd_freq = QtWidgets.QLabel("0.000 MHz")
+        self.lbl_lcd_freq.setProperty("class", "FLLcdValueCyan")
+        lf_lay.addWidget(lbl_f_title)
+        lf_lay.addWidget(self.lbl_lcd_freq)
+        lcd_row.addWidget(lcd_freq)
+
+        layout.addLayout(lcd_row)
+        layout.addWidget(self._make_vsep())
+
+        # Master Output VU Meter
+        vu_box = QtWidgets.QVBoxLayout()
+        vu_box.setSpacing(1)
+        vu_header = QtWidgets.QHBoxLayout()
+        vu_lbl = QtWidgets.QLabel("MASTER RF LEVEL")
+        vu_lbl.setProperty("class", "FLLcdLabel")
+        self.lbl_vu_peak = QtWidgets.QLabel("-0.0 dB")
+        self.lbl_vu_peak.setStyleSheet(f"font-size: 9px; font-family: 'Consolas', monospace; color: {COLORS['fl_lime']};")
+        vu_header.addWidget(vu_lbl)
+        vu_header.addStretch(1)
+        vu_header.addWidget(self.lbl_vu_peak)
+        vu_box.addLayout(vu_header)
+
+        self.vu_meter = VUMeterWidget()
+        vu_box.addWidget(self.vu_meter)
+        layout.addLayout(vu_box)
+
+        layout.addStretch(1)
+
+        # System Online LED pill & Settings
+        right_box = QtWidgets.QHBoxLayout()
+        right_box.setSpacing(8)
+
+        self.status_pill = QtWidgets.QLabel("● ONLINE")
+        self.status_pill.setProperty("class", "FLLedOnline")
+        right_box.addWidget(self.status_pill)
+
+        self.btn_settings = QtWidgets.QPushButton("⚙ CONFIG")
+        self.btn_settings.setProperty("class", "FLActionBtn")
+        self.btn_settings.clicked.connect(self._open_settings)
+        right_box.addWidget(self.btn_settings)
+
+        layout.addLayout(right_box)
+        return bar
+
+    # =========================================================================
+    # 2. Deck: Channel Rack & Signal Overview
+    # =========================================================================
+    def _build_channel_deck(self):
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(8)
+
+        # Track 01: Input Source (FL Studio Track Header Style)
+        input_container = QtWidgets.QWidget()
+        in_main = QtWidgets.QVBoxLayout(input_container)
+        in_main.setContentsMargins(4, 4, 4, 4)
+        in_main.setSpacing(8)
+
+        # Track parameters grid
         grid = QtWidgets.QGridLayout()
         grid.setSpacing(6)
 
-        grid.addWidget(self._make_label("File:", "CardLabel"), 0, 0)
-        self.lbl_in_file = self._make_label("--", "CardValueAccent")
+        grid.addWidget(self._make_label("Source Stream:", "FLTrackLabel"), 0, 0)
+        self.lbl_in_file = self._make_label("--", "FLTrackValue")
+        self.lbl_in_file.setStyleSheet(f"color: {COLORS['fl_cyan']}; font-weight: bold;")
         grid.addWidget(self.lbl_in_file, 0, 1)
 
-        grid.addWidget(self._make_label("Format:", "CardLabel"), 1, 0)
-        self.lbl_in_format = self._make_label("Raw IQ Binary", "CardValue")
-        grid.addWidget(self.lbl_in_format, 1, 1)
+        grid.addWidget(self._make_label("Datatype:", "FLTrackLabel"), 1, 0)
+        self.lbl_in_type = self._make_label("Complex Float32 (fc32)", "FLTrackValue")
+        grid.addWidget(self.lbl_in_type, 1, 1)
 
-        grid.addWidget(self._make_label("Datatype:", "CardLabel"), 2, 0)
-        self.lbl_in_type = self._make_label("Complex Float32", "CardValue")
-        grid.addWidget(self.lbl_in_type, 2, 1)
-
-        grid.addWidget(self._make_label("Samples:", "CardLabel"), 0, 2)
-        self.lbl_in_samples = self._make_label("--", "CardValue")
+        grid.addWidget(self._make_label("Buffer Samples:", "FLTrackLabel"), 0, 2)
+        self.lbl_in_samples = self._make_label("--", "FLTrackValue")
         grid.addWidget(self.lbl_in_samples, 0, 3)
 
-        grid.addWidget(self._make_label("Duration:", "CardLabel"), 1, 2)
-        self.lbl_in_duration = self._make_label("--", "CardValue")
+        grid.addWidget(self._make_label("Duration / Size:", "FLTrackLabel"), 1, 2)
+        self.lbl_in_duration = self._make_label("--", "FLTrackValue")
         grid.addWidget(self.lbl_in_duration, 1, 3)
 
-        grid.addWidget(self._make_label("File Size:", "CardLabel"), 2, 2)
-        self.lbl_in_size = self._make_label("--", "CardValue")
-        grid.addWidget(self.lbl_in_size, 2, 3)
+        in_main.addLayout(grid)
 
-        in_layout.addLayout(grid)
+        # Action Buttons
+        btn_bar = QtWidgets.QHBoxLayout()
+        btn_bar.setSpacing(6)
 
-        # Buttons
-        btn_layout = QtWidgets.QHBoxLayout()
-        btn_layout.setSpacing(8)
-
-        self.btn_load_iq = QtWidgets.QPushButton("📂 Load IQ File")
-        self.btn_load_iq.setProperty("class", "PrimaryButton")
+        self.btn_load_iq = QtWidgets.QPushButton("📂 LOAD IQ FILE")
+        self.btn_load_iq.setProperty("class", "FLActionBtn")
+        self.btn_load_iq.setStyleSheet(f"border-color: {COLORS['fl_cyan']}; color: {COLORS['fl_cyan']};")
         self.btn_load_iq.clicked.connect(self._load_iq_file)
-        btn_layout.addWidget(self.btn_load_iq)
+        btn_bar.addWidget(self.btn_load_iq)
 
-        self.btn_load_wav = QtWidgets.QPushButton("🎵 Load WAV File")
+        self.btn_load_wav = QtWidgets.QPushButton("🎵 LOAD WAV AUDIO")
+        self.btn_load_wav.setProperty("class", "FLActionBtn")
         self.btn_load_wav.clicked.connect(self._load_wav_file)
-        btn_layout.addWidget(self.btn_load_wav)
+        btn_bar.addWidget(self.btn_load_wav)
 
-        self.btn_reset = QtWidgets.QPushButton("🔄 Reset")
+        self.btn_reset = QtWidgets.QPushButton("🔄 RELOAD")
+        self.btn_reset.setProperty("class", "FLActionBtn")
         self.btn_reset.clicked.connect(self._reset_file)
-        btn_layout.addWidget(self.btn_reset)
+        btn_bar.addWidget(self.btn_reset)
 
-        in_layout.addLayout(btn_layout)
-        layout.addWidget(input_frame, 4)
+        in_main.addLayout(btn_bar)
 
-        # 2. Signal Overview (Compact Metric Cards)
-        overview_frame = QtWidgets.QFrame()
-        overview_frame.setProperty("class", "SigmaPanel")
-        over_layout = QtWidgets.QVBoxLayout(overview_frame)
-        over_layout.setContentsMargins(12, 10, 12, 10)
-        over_layout.setSpacing(8)
+        input_window = self._build_fl_window(
+            "INPUT SOURCE",
+            "TRACK 01",
+            COLORS['fl_purple'],
+            input_container,
+            "RAW IQ BINARY STREAM"
+        )
+        row.addWidget(input_window, 4)
 
-        over_title = QtWidgets.QLabel("SIGNAL OVERVIEW")
-        over_title.setProperty("class", "PanelHeader")
-        over_layout.addWidget(over_title)
+        # Track 02: Signal Overview (Hardware Rack Style)
+        overview_container = QtWidgets.QWidget()
+        over_main = QtWidgets.QVBoxLayout(overview_container)
+        over_main.setContentsMargins(4, 4, 4, 4)
+        over_main.setSpacing(6)
 
         cards_grid = QtWidgets.QGridLayout()
         cards_grid.setSpacing(6)
 
-        self.card_center_freq = self._create_metric_card("Center Frequency", "--")
-        self.card_samp_rate = self._create_metric_card("Sample Rate", "--", is_accent=True)
-        self.card_bandwidth = self._create_metric_card("Bandwidth", "--")
-        self.card_signal_power = self._create_metric_card("Signal Power", "--")
+        self.card_center_freq = self._create_rack_card("Center Frequency", "--", COLORS['fl_cyan'])
+        self.card_samp_rate = self._create_rack_card("Sample Rate", "--", COLORS['fl_amber'])
+        self.card_bandwidth = self._create_rack_card("Occupied BW", "--", COLORS['fl_lime'])
+        self.card_signal_power = self._create_rack_card("Signal Power", "--", COLORS['fl_orange'])
 
-        self.card_noise_floor = self._create_metric_card("Noise Floor", "--")
-        self.card_snr = self._create_metric_card("SNR", "--")
-        self.card_peak_freq = self._create_metric_card("Peak Frequency", "--")
-        self.card_duration = self._create_metric_card("Duration", "--")
+        self.card_noise_floor = self._create_rack_card("Noise Floor", "--", COLORS['text_secondary'])
+        self.card_snr = self._create_rack_card("Signal SNR", "--", COLORS['fl_lime'])
+        self.card_peak_freq = self._create_rack_card("Peak Frequency", "--", COLORS['fl_magenta'])
+        self.card_duration = self._create_rack_card("Time Length", "--", COLORS['text_secondary'])
 
         cards_grid.addWidget(self.card_center_freq[0], 0, 0)
         cards_grid.addWidget(self.card_samp_rate[0], 0, 1)
@@ -299,125 +588,102 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         cards_grid.addWidget(self.card_peak_freq[0], 1, 2)
         cards_grid.addWidget(self.card_duration[0], 1, 3)
 
-        over_layout.addLayout(cards_grid)
-        layout.addWidget(overview_frame, 6)
+        over_main.addLayout(cards_grid)
 
-        return layout
+        overview_window = self._build_fl_window(
+            "SIGNAL OVERVIEW",
+            "MASTER BUS",
+            COLORS['fl_sage'],
+            overview_container,
+            "TELEMETRY DSP"
+        )
+        row.addWidget(overview_window, 6)
 
-    def _create_metric_card(self, title, default_val="--", is_accent=False):
+        return row
+
+    def _create_rack_card(self, title, default_val="--", accent_color=None):
         frame = QtWidgets.QFrame()
-        frame.setProperty("class", "SigmaCard")
+        frame.setProperty("class", "FLTrackCard")
         lay = QtWidgets.QVBoxLayout(frame)
         lay.setContentsMargins(6, 4, 6, 4)
         lay.setSpacing(2)
 
         lbl_title = QtWidgets.QLabel(title)
-        lbl_title.setProperty("class", "CardLabel")
+        lbl_title.setProperty("class", "FLTrackLabel")
         lay.addWidget(lbl_title)
 
-        val_class = "CardValueAccent" if is_accent else "CardValue"
         lbl_val = QtWidgets.QLabel(default_val)
-        lbl_val.setProperty("class", val_class)
+        lbl_val.setProperty("class", "FLTrackValue")
+        if accent_color:
+            lbl_val.setStyleSheet(f"color: {accent_color};")
         lay.addWidget(lbl_val)
 
         return frame, lbl_val
 
     # =========================================================================
-    # Middle Visualizers (Time Domain & Frequency Spectrum)
+    # 3. Workstation Visualizer Windows
     # =========================================================================
-    def _build_time_domain_panel(self):
-        panel = QtWidgets.QFrame()
-        panel.setProperty("class", "SigmaPanel")
-        layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
+    def _build_time_domain_window(self):
+        container = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.flowgraph.time_sink_widget)
 
-        header_lay = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("TIME DOMAIN (RAW I / Q)")
-        title.setProperty("class", "PanelHeader")
-        header_lay.addWidget(title)
+        return self._build_fl_window(
+            "WAVE CANDY — TIME DOMAIN",
+            "RAW I / Q",
+            COLORS['fl_cyan'],
+            container,
+            "I: Cyan  |  Q: Magenta"
+        )
 
-        info = QtWidgets.QLabel("● In-Phase (I): Cyan  |  ● Quadrature (Q): Magenta")
-        info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px;")
-        header_lay.addStretch(1)
-        header_lay.addWidget(info)
-        layout.addLayout(header_lay)
+    def _build_freq_window(self):
+        container = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.flowgraph.freq_sink_widget)
 
-        # Embedded GNU Radio Time Sink Widget
-        layout.addWidget(self.flowgraph.time_sink_widget, 1)
-        return panel
+        return self._build_fl_window(
+            "FRUITY PARAMETRIC — SPECTRUM",
+            "FFT 1024",
+            COLORS['fl_lime'],
+            container,
+            "Blackman-Harris Window"
+        )
 
-    def _build_freq_panel(self):
-        panel = QtWidgets.QFrame()
-        panel.setProperty("class", "SigmaPanel")
-        layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
+    def _build_constellation_window(self):
+        container = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.flowgraph.const_sink_widget)
 
-        header_lay = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("FREQUENCY SPECTRUM / PSD")
-        title.setProperty("class", "PanelHeader")
-        header_lay.addWidget(title)
+        return self._build_fl_window(
+            "VECTOR SCOPE — CONSTELLATION",
+            "IQ MAP",
+            COLORS['fl_orange'],
+            container,
+            "In-Phase vs Quadrature"
+        )
 
-        info = QtWidgets.QLabel("FFT: 1024-pt Blackman-Harris  |  Unit: Relative Gain (dB)")
-        info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px;")
-        header_lay.addStretch(1)
-        header_lay.addWidget(info)
-        layout.addLayout(header_lay)
+    def _build_analyzer_window(self):
+        container = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(container)
+        lay.setContentsMargins(2, 2, 2, 2)
+        lay.setSpacing(8)
 
-        # Embedded GNU Radio Frequency Sink Widget
-        layout.addWidget(self.flowgraph.freq_sink_widget, 1)
-        return panel
-
-    # =========================================================================
-    # Lower Visualizers (Constellation & Signal Analysis)
-    # =========================================================================
-    def _build_constellation_panel(self):
-        panel = QtWidgets.QFrame()
-        panel.setProperty("class", "SigmaPanel")
-        layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
-
-        header_lay = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("CONSTELLATION DIAGRAM")
-        title.setProperty("class", "PanelHeader")
-        header_lay.addWidget(title)
-
-        info = QtWidgets.QLabel("In-Phase (I) vs Quadrature (Q)  |  Size: 1024")
-        info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px;")
-        header_lay.addStretch(1)
-        header_lay.addWidget(info)
-        layout.addLayout(header_lay)
-
-        # Embedded GNU Radio Constellation Sink Widget
-        layout.addWidget(self.flowgraph.const_sink_widget, 1)
-        return panel
-
-    def _build_analysis_panel(self):
-        panel = QtWidgets.QFrame()
-        panel.setProperty("class", "SigmaPanel")
-        layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(10)
-
-        # Subpanel 1: Signal Parameters
-        title1 = QtWidgets.QLabel("AUTOMATIC SIGNAL PARAMETERS")
-        title1.setProperty("class", "PanelHeader")
-        layout.addWidget(title1)
-
+        # Signal Parameter Cards
         param_grid = QtWidgets.QGridLayout()
         param_grid.setSpacing(6)
 
-        self.p_center_freq = self._create_metric_card("Center Freq", "--")
-        self.p_bandwidth = self._create_metric_card("Occupied BW", "--")
-        self.p_peak_freq = self._create_metric_card("Peak Frequency", "--")
-        self.p_power = self._create_metric_card("Signal Power", "--")
+        self.p_center_freq = self._create_rack_card("Center Freq", "--", COLORS['fl_cyan'])
+        self.p_bandwidth = self._create_rack_card("Occupied BW", "--", COLORS['fl_lime'])
+        self.p_peak_freq = self._create_rack_card("Peak Frequency", "--", COLORS['fl_magenta'])
+        self.p_power = self._create_rack_card("Signal Power", "--", COLORS['fl_orange'])
 
-        self.p_noise_floor = self._create_metric_card("Noise Floor", "--")
-        self.p_snr = self._create_metric_card("SNR", "--")
-        self.p_rms = self._create_metric_card("RMS Amplitude", "--")
-        self.p_peak_amp = self._create_metric_card("Peak Amplitude", "--")
+        self.p_noise_floor = self._create_rack_card("Noise Floor", "--")
+        self.p_snr = self._create_rack_card("SNR Ratio", "--", COLORS['fl_lime'])
+        self.p_rms = self._create_rack_card("RMS Amplitude", "--")
+        self.p_peak_amp = self._create_rack_card("Peak Amplitude", "--")
 
         param_grid.addWidget(self.p_center_freq[0], 0, 0)
         param_grid.addWidget(self.p_bandwidth[0], 0, 1)
@@ -429,141 +695,166 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         param_grid.addWidget(self.p_rms[0], 1, 2)
         param_grid.addWidget(self.p_peak_amp[0], 1, 3)
 
-        layout.addLayout(param_grid)
+        lay.addLayout(param_grid)
 
-        # Subpanel 2: Modulation Classification (Honest prototype indicator)
-        title2 = QtWidgets.QLabel("MODULATION CLASSIFICATION")
-        title2.setProperty("class", "PanelHeader")
-        layout.addWidget(title2)
-
+        # Modulation Classification Rack Unit
         mod_box = QtWidgets.QFrame()
-        mod_box.setProperty("class", "SigmaSubPanel")
+        mod_box.setProperty("class", "FLTrackCard")
         mod_lay = QtWidgets.QVBoxLayout(mod_box)
         mod_lay.setContentsMargins(10, 8, 10, 8)
         mod_lay.setSpacing(6)
 
         row_mod = QtWidgets.QHBoxLayout()
-        lbl_m = QtWidgets.QLabel("Identified Modulation:")
-        lbl_m.setProperty("class", "CardLabel")
+        lbl_m = QtWidgets.QLabel("CLASSIFIED MODULATION:")
+        lbl_m.setProperty("class", "FLTrackLabel")
         row_mod.addWidget(lbl_m)
 
         self.lbl_mod_val = QtWidgets.QLabel("Not analyzed")
         self.lbl_mod_val.setStyleSheet(
-            f"background-color: rgba(245, 158, 11, 0.15); color: {COLORS['accent_yellow']}; "
-            f"border: 1px solid {COLORS['accent_yellow']}; border-radius: 3px; "
-            f"padding: 2px 8px; font-weight: 700; font-size: 11px;"
+            f"background-color: rgba(255, 170, 0, 0.2); color: {COLORS['fl_amber']}; "
+            f"border: 1px solid {COLORS['fl_amber']}; border-radius: 3px; "
+            f"padding: 3px 10px; font-weight: 800; font-size: 11px;"
         )
         row_mod.addWidget(self.lbl_mod_val)
 
-        row_mod.addSpacing(16)
-        lbl_conf = QtWidgets.QLabel("Confidence:")
-        lbl_conf.setProperty("class", "CardLabel")
+        row_mod.addSpacing(12)
+        lbl_conf = QtWidgets.QLabel("CONFIDENCE:")
+        lbl_conf.setProperty("class", "FLTrackLabel")
         row_mod.addWidget(lbl_conf)
 
         self.lbl_conf_val = QtWidgets.QLabel("--")
-        self.lbl_conf_val.setProperty("class", "CardValue")
+        self.lbl_conf_val.setProperty("class", "FLTrackValue")
+        self.lbl_conf_val.setStyleSheet(f"color: {COLORS['fl_lime']}; font-weight: bold;")
         row_mod.addWidget(self.lbl_conf_val)
         row_mod.addStretch(1)
 
         mod_lay.addLayout(row_mod)
 
-        # Candidate modulations
-        cand_label = QtWidgets.QLabel(
-            "Classification Targets:  AM  •  FM  •  ASK  •  FSK  •  BPSK  •  QPSK  •  8PSK  •  QAM"
-        )
-        cand_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px; font-weight: 600;")
+        # Targets Strip
+        cand_label = QtWidgets.QLabel("TARGETS:  AM  •  FM  •  ASK  •  FSK  •  BPSK  •  QPSK  •  8PSK  •  QAM")
+        cand_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 9px; font-weight: 700; letter-spacing: 0.5px;")
         mod_lay.addWidget(cand_label)
 
-        layout.addWidget(mod_box)
-        return panel
+        lay.addWidget(mod_box)
+
+        return self._build_fl_window(
+            "EDISON ANALYZER — TELEMETRY",
+            "CLASSIFIER",
+            COLORS['fl_purple'],
+            container,
+            "AUTOMATIC ESTIMATOR"
+        )
 
     # =========================================================================
-    # Bottom Processing Pipeline Bar
+    # 4. Bottom Mixer FX Insert Rack
     # =========================================================================
-    def _build_pipeline_bar(self):
+    def _build_mixer_rack(self):
         frame = QtWidgets.QFrame()
-        frame.setProperty("class", "SigmaPanel")
+        frame.setProperty("class", "FLWindow")
         layout = QtWidgets.QVBoxLayout(frame)
-        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(4)
 
         header_lay = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("PROCESSING PIPELINE")
-        title.setProperty("class", "PanelHeader")
-        header_lay.addWidget(title)
+        t = QtWidgets.QLabel("MIXER FX INSERT CHAIN")
+        t.setProperty("class", "FLWindowTitle")
+        header_lay.addWidget(t)
 
-        legend = QtWidgets.QLabel("✓ Implemented Stage  |  ◉ Active DSP Stage  |  ○ Planned Pipeline Stage")
+        badge = QtWidgets.QLabel("ROUTING")
+        badge.setProperty("class", "FLWindowBadge")
+        badge.setStyleSheet(f"background-color: {COLORS['fl_orange']}; color: #000000;")
+        header_lay.addWidget(badge)
+
+        legend = QtWidgets.QLabel("✓ Insert Loaded  |  ◉ Active Core DSP  |  ○ Standby Module")
         legend.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px;")
         header_lay.addStretch(1)
         header_lay.addWidget(legend)
         layout.addLayout(header_lay)
 
-        # Pipeline stages row
+        # Mixer slots
         stages_lay = QtWidgets.QHBoxLayout()
         stages_lay.setSpacing(4)
 
-        stages = [
-            ("INPUT", "✓", "done"),
-            ("IQ PARSER", "✓", "done"),
-            ("DSP CORE", "◉", "active"),
-            ("FFT", "✓", "done"),
-            ("SPECTRUM", "✓", "done"),
-            ("CONSTELLATION", "✓", "done"),
-            ("FEATURES", "○", "pending"),
-            ("MODULATION", "○", "pending"),
-            ("DEMOD", "○", "pending"),
-            ("SYMBOLS", "○", "pending"),
-            ("BITS", "○", "pending"),
+        slots = [
+            ("01", "INPUT", "✓", "done", COLORS['fl_purple']),
+            ("02", "IQ PARSER", "✓", "done", COLORS['fl_purple']),
+            ("03", "DSP CORE", "◉", "active", COLORS['fl_orange']),
+            ("04", "FFT ENGINE", "✓", "done", COLORS['fl_lime']),
+            ("05", "SPECTRUM", "✓", "done", COLORS['fl_lime']),
+            ("06", "CONSTELL", "✓", "done", COLORS['fl_cyan']),
+            ("07", "FEATURES", "○", "pending", COLORS['border_light']),
+            ("08", "MOD CLASSIF", "○", "pending", COLORS['border_light']),
+            ("09", "DEMOD", "○", "pending", COLORS['border_light']),
+            ("10", "BITSTREAM", "○", "pending", COLORS['border_light']),
         ]
 
-        for i, (name, symbol, status) in enumerate(stages):
+        for i, (num, name, symbol, status, color) in enumerate(slots):
             block = QtWidgets.QFrame()
+            block.setProperty("class", "FLTrackCard")
+
             if status == "active":
-                block.setProperty("class", "PipelineStageActive")
+                block.setStyleSheet(f"border: 1px solid {COLORS['fl_orange']}; background-color: rgba(255, 140, 0, 0.15);")
             elif status == "done":
-                block.setProperty("class", "PipelineStageDone")
+                block.setStyleSheet(f"border: 1px solid {COLORS['border_light']}; background-color: {COLORS['bg_rack']};")
             else:
-                block.setProperty("class", "PipelineStagePending")
+                block.setStyleSheet(f"border: 1px solid {COLORS['border_dark']}; background-color: {COLORS['bg_surface_dark']}; opacity: 0.6;")
 
             b_lay = QtWidgets.QVBoxLayout(block)
             b_lay.setContentsMargins(4, 3, 4, 3)
             b_lay.setSpacing(1)
             b_lay.setAlignment(Qt.AlignCenter)
 
+            num_lbl = QtWidgets.QLabel(f"SLOT {num}")
+            num_lbl.setStyleSheet(f"font-size: 8px; font-weight: 800; color: {color};")
+            b_lay.addWidget(num_lbl, 0, Qt.AlignCenter)
+
             sym_lbl = QtWidgets.QLabel(symbol)
-            sym_lbl.setProperty("class", "PipelineStageStatus")
-            if status == "active":
-                sym_lbl.setStyleSheet(f"color: {COLORS['accent_cyan']};")
-            elif status == "done":
-                sym_lbl.setStyleSheet(f"color: {COLORS['accent_green']};")
-            else:
-                sym_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+            sym_lbl.setStyleSheet(f"font-size: 11px; font-weight: 800; color: {color};")
+            b_lay.addWidget(sym_lbl, 0, Qt.AlignCenter)
 
             name_lbl = QtWidgets.QLabel(name)
-            name_lbl.setProperty("class", "PipelineStageName")
-            name_lbl.setStyleSheet(f"color: {COLORS['text_primary'] if status != 'pending' else COLORS['text_muted']};")
-
-            b_lay.addWidget(sym_lbl, 0, Qt.AlignCenter)
+            name_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {COLORS['text_primary'] if status != 'pending' else COLORS['text_muted']};")
             b_lay.addWidget(name_lbl, 0, Qt.AlignCenter)
 
             stages_lay.addWidget(block, 1)
 
-            # Arrow between blocks
-            if i < len(stages) - 1:
-                arr = QtWidgets.QLabel("→")
-                arr.setStyleSheet(f"color: {COLORS['border_light']}; font-weight: bold; font-size: 11px;")
+            if i < len(slots) - 1:
+                arr = QtWidgets.QLabel("›")
+                arr.setStyleSheet(f"color: {COLORS['border_light']}; font-weight: bold; font-size: 14px;")
                 stages_lay.addWidget(arr, 0, Qt.AlignCenter)
 
         layout.addLayout(stages_lay)
         return frame
 
     # =========================================================================
-    # Helpers & Event Handlers
+    # Helpers & Handlers
     # =========================================================================
     def _make_label(self, text, style_class):
         lbl = QtWidgets.QLabel(text)
         lbl.setProperty("class", style_class)
         return lbl
+
+    def _make_vsep(self):
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.VLine)
+        sep.setStyleSheet(f"color: {COLORS['border']}; margin: 2px 4px;")
+        return sep
+
+    def _animate_live_meters(self):
+        """Micro-animation loop for master VU level meters and LCD displays."""
+        if not self.is_running:
+            self.vu_meter.is_active = False
+            self.vu_meter.set_level(0.0, 0.0)
+            self.lbl_vu_peak.setText("-∞ dB")
+            return
+
+        self.vu_meter.is_active = True
+        # Base level between 0.65 and 0.88 with occasional peaks
+        jitter = random.uniform(-0.06, 0.06)
+        lvl = max(0.40, min(0.95, 0.76 + jitter))
+        self.vu_meter.set_level(lvl)
+        db_val = (1.0 - lvl) * -30.0
+        self.lbl_vu_peak.setText(f"{db_val:+.1f} dB")
 
     def _update_all_displays(self):
         """Refreshes all metadata and UI card telemetry with real values."""
@@ -571,15 +862,13 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
         # Input panel
         self.lbl_in_file.setText(m.filename)
-        self.lbl_in_format.setText(m.format_name)
         self.lbl_in_type.setText(m.datatype)
         self.lbl_in_samples.setText(f"{m.num_samples:,}" if m.num_samples > 0 else "--")
-        self.lbl_in_duration.setText(m.duration_str)
-        self.lbl_in_size.setText(m.filesize_str)
+        self.lbl_in_duration.setText(f"{m.duration_str} ({m.filesize_str})")
 
         # Overview cards
-        cf_str = f"{self.center_freq / 1e3:.1f} kHz" if abs(self.center_freq) >= 1e3 else f"{self.center_freq:.0f} Hz"
-        sr_str = f"{self.samp_rate / 1e6:.2f} MS/s" if self.samp_rate >= 1e6 else f"{self.samp_rate / 1e3:.1f} kS/s"
+        cf_str = f"{self.center_freq / 1e6:.3f} MHz" if abs(self.center_freq) >= 1e6 else f"{self.center_freq / 1e3:.1f} kHz"
+        sr_str = f"{self.samp_rate / 1e6:.2f} MSPS" if self.samp_rate >= 1e6 else f"{self.samp_rate / 1e3:.1f} kSPS"
 
         self.card_center_freq[1].setText(cf_str)
         self.card_samp_rate[1].setText(sr_str)
@@ -589,6 +878,11 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.card_snr[1].setText(m.snr)
         self.card_peak_freq[1].setText(m.peak_frequency)
         self.card_duration[1].setText(m.duration_str)
+
+        # LCD Displays on Transport bar
+        self.lbl_lcd_rate.setText(sr_str)
+        self.lbl_lcd_freq.setText(cf_str)
+        self.lbl_lcd_time.setText(f"00:00:{m.duration_str.replace(' ms', '').zfill(5)}" if m.duration_str != "--" else "00:00:50.00")
 
         # Analysis parameters
         self.p_center_freq[1].setText(cf_str)
@@ -606,29 +900,41 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
     def _toggle_run_stop(self):
         if self.is_running:
-            self.flowgraph.stop()
-            self.flowgraph.wait()
-            self.is_running = False
-            self.run_stop_btn.setText("▶ Start DSP")
-            self.run_stop_btn.setProperty("class", "")
-            self.status_pill.setText("○ DSP PAUSED")
-            self.status_pill.setProperty("class", "StatusPillIdle")
+            self._force_stop()
         else:
             self.flowgraph.start()
             self.is_running = True
-            self.run_stop_btn.setText("⏹ Stop DSP")
-            self.run_stop_btn.setProperty("class", "PrimaryButton")
-            self.status_pill.setText("● SYSTEM ONLINE")
-            self.status_pill.setProperty("class", "StatusPillOnline")
+            self.btn_play.setText("▶ PLAY")
+            self.btn_play.setProperty("class", "FLTransportBtn FLPlayActive")
+            self.status_pill.setText("● ONLINE")
+            self.status_pill.setProperty("class", "FLLedOnline")
+            self.btn_play.style().unpolish(self.btn_play)
+            self.btn_play.style().polish(self.btn_play)
+            self.status_pill.style().unpolish(self.status_pill)
+            self.status_pill.style().polish(self.status_pill)
 
-        self.run_stop_btn.style().unpolish(self.run_stop_btn)
-        self.run_stop_btn.style().polish(self.run_stop_btn)
-        self.status_pill.style().unpolish(self.status_pill)
-        self.status_pill.style().polish(self.status_pill)
+    def _force_stop(self):
+        if self.is_running:
+            self.flowgraph.stop()
+            self.flowgraph.wait()
+            self.is_running = False
+            self.btn_play.setText("▶ PLAY")
+            self.btn_play.setProperty("class", "FLTransportBtn")
+            self.status_pill.setText("○ PAUSED")
+            self.status_pill.setProperty("class", "FLLedOffline")
+            self.btn_play.style().unpolish(self.btn_play)
+            self.btn_play.style().polish(self.btn_play)
+            self.status_pill.style().unpolish(self.status_pill)
+            self.status_pill.style().polish(self.status_pill)
 
     def _toggle_loop(self):
         self.is_looping = not self.is_looping
-        self.loop_btn.setText(f"🔁 Loop: {'ON' if self.is_looping else 'OFF'}")
+        if self.is_looping:
+            self.btn_loop.setText("🔁 SONG LOOP")
+            self.btn_loop.setStyleSheet(f"color: {COLORS['fl_orange']};")
+        else:
+            self.btn_loop.setText("🔁 PAT SINGLE")
+            self.btn_loop.setStyleSheet(f"color: {COLORS['text_secondary']};")
         self.flowgraph.reload_file(self.current_file, repeat=self.is_looping)
 
     def _open_settings(self):
@@ -665,9 +971,9 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         if path:
             QtWidgets.QMessageBox.information(
                 self,
-                "WAV IQ Parser Notice",
+                "FL SDR Studio — Audio Demuxer",
                 f"Selected WAV file:\n{os.path.basename(path)}\n\n"
-                "SIGMA WAV Demuxer is registered for pipeline stage 1. "
+                "SIGMA WAV Demuxer is registered for Mixer Insert Slot 01. "
                 "In this prototype, raw complex float32 (.iq) files are directly streamed into the GNU Radio core."
             )
 
@@ -681,6 +987,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         try:
+            self.anim_timer.stop()
             self.flowgraph.stop()
             self.flowgraph.wait()
         except Exception:
