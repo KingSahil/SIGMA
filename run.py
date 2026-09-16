@@ -3,7 +3,7 @@
 
 """
 SIGMA - Signal Intelligence & Generalized Modulation Analyzer
-Root Entry Launcher
+Root Launcher Script
 Delegates execution to src.sigma_iq_analyzer
 """
 
@@ -20,4 +20,3 @@ from sigma_iq_analyzer import main
 
 if __name__ == '__main__':
     sys.exit(main())
-

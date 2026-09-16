@@ -15,11 +15,34 @@ This application loads complex IQ samples from a binary recording (`signal.iq`) 
 
 ## 📁 Repository Structure
 
-| File | Description |
+```
+gnu/
+├── data/
+│   ├── audio/              # Sample RF audio & demodulated recordings (.wav)
+│   └── iq/                 # Raw complex IQ binary recordings (.iq)
+├── docs/                   # Full system & architecture documentation
+├── grc/                    # GNU Radio Companion source flowgraphs (.grc)
+├── src/                    # Core Python application modules
+│   ├── __init__.py
+│   ├── sigma_analyzer_core.py   # Physical signal metrics & DSP extraction
+│   ├── sigma_flowgraph.py       # GNU Radio streaming engine & Qt sinks
+│   ├── sigma_iq_analyzer.py     # Main application runner
+│   ├── sigma_main_window.py     # Modern Google Stitch / Material Design 3 GUI
+│   └── sigma_theme.py           # Color palette & unified QSS stylesheet
+├── run.py                  # Convenient root launcher script
+├── sigma_iq_analyzer.py    # Root launcher for backward compatibility
+├── README.md               # Quick-start guide
+└── .gitignore              # Ignored caches and temporary converted files
+```
+
+| Folder / File | Description |
 | :--- | :--- |
-| **`sigma_iq_analyzer.py`** | Standalone Python script running the Qt5 GUI and GNU Radio flowgraph. |
-| **`SIGMA_IQ_Analyzer.grc`** | GNU Radio Companion (GRC) source project file (flowgraph diagram). |
-| **`signal.iq`** | Binary file containing raw complex 32-bit floating-point (complex64) IQ samples. |
+| **`src/`** | Python application packages, GUI window, DSP core, and theme engine. |
+| **`data/iq/`** | Sample raw IQ binary captures (`signal.iq`, BPSK, QPSK, FM RDS). |
+| **`data/audio/`** | Sample WAV recordings (`sdr_test_stereo.wav`, `thunderclouds_clip.wav`). |
+| **`grc/`** | GNU Radio Companion visual flowgraph projects (`SIGMA_IQ_Analyzer.grc`). |
+| **`docs/`** | Architectural manuals, data pipelines, technology specs, and guides. |
+| **`sigma_iq_analyzer.py` / `run.py`** | Root entry scripts to launch the application. |
 
 ---
 
@@ -76,7 +99,7 @@ Open PowerShell in this project folder (`gnu/`) and execute:
 ### Option 3: Open in GNU Radio Companion (Visual Editor)
 If you want to view or edit the signal processing blocks visually:
 1. Open your Start Menu and search for **GNU Radio Companion** (or run `& "$env:USERPROFILE\radioconda\Scripts\gnuradio-companion.exe"` in terminal).
-2. In GNU Radio Companion, click **File > Open** and select `SIGMA_IQ_Analyzer.grc`.
+2. In GNU Radio Companion, click **File > Open** and select `grc/SIGMA_IQ_Analyzer.grc`.
 3. Press the **Play (▶️)** button (or press `F5`) to execute the flowgraph or generate updated Python code.
 
 ---
@@ -85,12 +108,12 @@ If you want to view or edit the signal processing blocks visually:
 
 The flowgraph comes configured with the following default parameters:
 - **Sample Rate (`samp_rate`)**: `1,000,000` (1 MSps)
-- **Input Source**: `signal.iq` (Repeat: Enabled)
+- **Input Source**: `data/iq/signal.iq` (Repeat: Enabled)
 - **FFT Size**: `1024` with Blackman-Harris window
 
 To use your own recorded IQ file:
-1. Place your `.iq` or `.bin` recording into this directory.
-2. In `SIGMA_IQ_Analyzer.grc` (or in `sigma_iq_analyzer.py`), change the filename parameter in the **File Source** block.
+1. Place your `.iq` or `.bin` recording into the `data/iq/` directory (or click **📂 Load IQ File** in the GUI).
+2. In `grc/SIGMA_IQ_Analyzer.grc` (or in `src/sigma_iq_analyzer.py`), change the filename parameter in the **File Source** block.
 3. Match the **Sample Rate** variable (`samp_rate`) to the sample rate used when recording the signal.
 
 ---
@@ -105,4 +128,4 @@ To use your own recorded IQ file:
   ```
 
 ### Window Closes Immediately
-- Verify that `signal.iq` exists in the working directory from which you are running the command.
+- Verify that `data/iq/signal.iq` exists. The application automatically searches `data/iq/signal.iq`, `data/signal.iq`, and `signal.iq`.

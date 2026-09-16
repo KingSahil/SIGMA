@@ -1,0 +1,11 @@
+{
+  "file": "C:\\Users\\sahil\\Downloads\\gnu\\signal.iq",
+  "timestamp": "2026-09-16T14:41:36.533357",
+  "sample_rate": 1000000,
+  "center_frequency": 0.0,
+  "peak_frequency": "+100.83 kHz",
+  "bandwidth": "363.3 kHz",
+  "snr": "27.6 dB",
+  "modulation_class": "Digital PSK/FSK",
+  "confidence": "78.4%"
+}
