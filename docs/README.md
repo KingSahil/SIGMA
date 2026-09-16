@@ -42,7 +42,9 @@ SIGMA is an RF signal intelligence workstation and real-time visualization platf
 
 ## ⚡ Key Highlights
 
-- **Truth-in-Metrics Core**: Calculates authentic physical properties (RMS amplitude, peak voltage, dBFS power, peak frequency with FFT windowing) rather than mocked telemetry.
-- **GNU Radio 3.10 Integration**: High-performance C++ digital signal processing flowgraph with zero-copy stream processing.
-- **Modern Google Stitch / Material Design 3 UI**: Clean dark aesthetic with custom typography, responsive splitters, and real-time visualization widgets.
-- **Native Audio Subsystem**: Instant AM/envelope demodulation and baseband audio previewing for RF and acoustic recordings.
+- **Truth-in-Metrics Core**: All 8 physical DSP metrics (RMS amplitude, peak amplitude, dBFS power, peak frequency, 99% OBW, noise floor, SNR, and modulation class) are computed from real sample data using NumPy — no mocked values.
+- **Four Real-Time GNU Radio Sinks**: Time Domain, Frequency Spectrum (FFT), Waterfall (spectrogram), and Constellation Diagram — all in a 2×2 resizable grid.
+- **View Mode Switcher + HUD Overlay**: Five toggle buttons collapse the 2×2 grid into a single full-resolution sink. Interactive click/drag on any plot shows live coordinate readouts.
+- **Multi-Mode Audio Demodulator**: FM discriminator, envelope detector, and BFO heterodyne mixer auto-blend based on signal characteristics, outputting 44.1 kHz 16-bit PCM for low-latency Windows playback.
+- **GNU Radio 3.10 Integration**: High-performance C++ DSP flowgraph with throttle-controlled stream processing and thread-safe dynamic file reloading.
+- **Modern Google Stitch / Material Design 3 UI**: Clean dark aesthetic with custom QSS typography, resizable splitters, and preview capture for instant frozen plot display on startup.

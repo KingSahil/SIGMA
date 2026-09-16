@@ -68,48 +68,50 @@ graph TD
 ## 2. Component Breakdown
 
 ### 2.1 Entry Point (`run.py` & `src/sigma_iq_analyzer.py`)
-- Initializes `QtWidgets.QApplication`.
-- Registers POSIX/Windows OS signal handlers (`SIGINT`, `SIGTERM`) to ensure clean process termination when closed from the terminal or IDE.
-- Runs a 500 ms `QTimer` heartbeat to allow Python's signal handler to interrupt execution on `Ctrl+C`.
-- Instantiates and displays `SigmaMainWindow`.
+- **`run.py`** (recommended): Root launcher that adds `src/` to `sys.path` and delegates to `src/sigma_iq_analyzer.py`.
+- **`src/sigma_iq_analyzer.py`**: Initializes `QtWidgets.QApplication`, registers POSIX/Windows OS signal handlers (`SIGINT`, `SIGTERM`) for clean process termination, runs a 500 ms `QTimer` heartbeat to allow Python's signal handler to interrupt execution on `Ctrl+C`, instantiates and displays `SigmaMainWindow`.
 
 ### 2.2 Presentation Layer (`src/sigma_main_window.py` & `src/sigma_theme.py`)
 The user interface implements Google Stitch / Material Design 3 dark mode aesthetics:
 - **`SigmaMainWindow`**:
   - Organizes the top-level window layout into:
-    1. **Header**: Brand identity, dynamic status pill ("● Analyzing"), settings modal trigger.
-    2. **Input Card**: Current file name, metadata chips (Format, Sample Count, Sample Rate, Total Duration/Filesize), and quick-action buttons ("📂 Load Signal File", "🔊 Play Audio").
-    3. **Visualizations**: Multi-view visualization suite hosting four embedded GNU Radio QtGUI sinks:
+    1. **Header**: Brand identity, settings modal trigger.
+    2. **Input Bar**: Current file name, metadata chips (Format, Sample Count, Sample Rate, Duration/Filesize), and quick-action buttons ("📂 Load Signal File", "🔊 Play Audio").
+    3. **Visualizations**: Multi-view visualization suite hosting four embedded GNU Radio QtGUI sinks in a resizable `QSplitter`:
        - **Time Domain**: Oscilloscope wave plot (I in cyan, Q in magenta).
        - **Frequency Spectrum**: 1024-point FFT with Blackman-Harris windowing.
        - **Waterfall (Spectrogram)**: Time-frequency intensity waterfall display.
        - **Constellation Diagram**: Balanced aspect ratio IQ scatter plot for symbol decoding.
-       - **View Mode Switcher**: Quick-toggle buttons (`⊞ Quad View`, `⏱ Time`, `📊 Frequency`, `🌊 Waterfall`, `⭕ Constellation`) allowing dynamic toggling between 2x2 multi-sink monitoring and full-resolution single-sink deep inspection.
-    4. **Results Section**: Real-time DSP physical metrics (Peak Frequency, Center Frequency, 99% Occupied Bandwidth, Signal Power dBFS, Noise Floor, SNR dB) and dedicated **Modulation Classifier** with confidence score.
-    5. **Pipeline Stepper**: Horizontal status tracker visually marking the 5 stages of signal intelligence:
+    4. **View Mode Switcher**: Five quick-toggle buttons (`⊞ 2x2 Grid`, `⏱ Time`, `📊 Spectrum`, `🌊 Waterfall`, `✦ Constellation`) that show/hide individual plot cards, enabling full-resolution single-sink deep inspection.
+    5. **Interactive HUD Overlay**: Each plot card hosts a `QwtPlotZoomer` event bridge. Cursor clicks and drags update an overlay `QLabel` badge with live coordinate readouts (time in µs/ms, frequency in kHz/MHz, amplitude dB, or I/Q values). Right-click unzooms and resets the hint text.
+    6. **Results Section**: 2×4 grid of real-time DSP physical metrics (Peak Frequency, Center Frequency, 99% Occupied Bandwidth, Signal Power dBFS, Noise Floor, SNR dB, RMS Amplitude, Peak Amplitude) and a dedicated **Modulation Classifier** with confidence score.
+    7. **Pipeline Stepper**: Horizontal status tracker marking completed and pending stages:
        `1. INPUT ✓` → `2. ANALYSIS ✓` → `3. MODULATION ✓` → `4. DEMOD ○` → `5. BITS ○`.
+- **`AudioManager`**:
+  - Handles both direct WAV playback and multi-mode IQ audio demodulation (see §2.5).
 - **`SettingsDialog`**:
   - Allows dynamic on-the-fly adjustment of the hardware sample rate (`samp_rate`) and center frequency (`center_freq`).
 - **`sigma_theme.py`**:
-  - Houses the complete color palette (`COLORS`) including dark slate backgrounds (`#0d1117`), container cards (`#161b24`), Google Sky Blue accents (`#38bdf8`), and In-Phase/Quadrature color pairs (`cyan` and `magenta/rose`).
-  - Contains the unified `BIG_MATERIAL_QSS` Qt Style Sheet.
+  - Houses the complete color palette (`COLORS`) including dark slate backgrounds (`#0d1117`), container cards (`#161b24`), Google Sky Blue accents (`#38bdf8`), and I/Q color pairs (`cyan` and `magenta/rose`).
+  - Contains the unified `MAIN_QSS` Qt Style Sheet.
 
 ### 2.3 GNU Radio Flowgraph Engine (`src/sigma_flowgraph.py` & `grc/`)
 Encapsulates GNU Radio's high-performance C++ streaming pipeline via `gr.top_block`:
-- **`file_source`**: Reads complex 32-bit floats (`sizeof_gr_complex = 8` bytes per sample). Configured with automatic circular loop repeating.
-- **`throttle`**: Hardware rate-matching block enforcing real-time sample throughput and eliminating CPU saturation and `fread` race conditions.
-- **`time_sink_c`**: Plots real-time I (In-Phase, cyan) and Q (Quadrature, magenta) channels against time.
-- **`freq_sink_c`**: Computes 1024-point FFT using a **Blackman-Harris window** with frequency shift and logarithmic dB relative gain output.
-- **`waterfall_sink_c`**: Computes time-frequency spectrogram heatmaps with adjustable intensity dynamic range.
-- **`constellation_sink_c`**: Renders an IQ scatter diagram (I on X-axis, Q on Y-axis) for inspecting symbol constellations.
-- **`sip.wrapinstance` Bridge**: GNU Radio C++ QtGUI widgets inherit from Qwt / Qt C++ classes. Using Riverbank SIP (`sip.wrapinstance`), the underlying C++ pointers are bridged cleanly into standard `PyQt5.QtWidgets.QWidget` instances for integration into the main window.
-- **Thread-safe Dynamic File Reloading**:
+- **`file_source`**: Reads complex 32-bit floats (`sizeof_gr_complex = 8` bytes per sample) with automatic circular loop repeating.
+- **`throttle`**: Hardware rate-matching block enforcing real-time sample throughput and eliminating CPU saturation and `fread` race conditions on looping files.
+- **`time_sink_c`**: Plots real-time I (In-Phase, cyan) and Q (Quadrature, magenta) channels against time. 1024-sample buffer, 20 Hz update rate.
+- **`freq_sink_c`**: Computes 1024-point FFT using a **Blackman-Harris window** with frequency shift and logarithmic dB output. Averaging factor: 0.2.
+- **`waterfall_sink_c`**: Computes time-frequency spectrogram heatmaps with `-140` to `+10 dB` intensity range.
+- **`constellation_sink_c`**: Renders an IQ scatter diagram (I on X-axis, Q on Y-axis) for inspecting symbol constellations. Auto-scale enabled.
+- **`sip.wrapinstance` Bridge**: GNU Radio C++ QtGUI widgets inherit from Qwt / Qt C++ classes. Using Riverbank SIP (`sip.wrapinstance`), the underlying C++ pointers are bridged into standard `PyQt5.QtWidgets.QWidget` instances for integration into the main window.
+- **Automatic Preview Capture**: On startup and after every file load, `capture_preview(duration_sec=0.15)` starts the flowgraph briefly, letting plots paint an initial frozen frame, then calls `stop_waves()` via `QTimer`. Plots only animate live when audio is playing.
+- **Thread-safe Dynamic File Reloading** (`reload_file`):
   ```python
-  self.lock()          # Halts GNU Radio scheduler execution
-  self.disconnect(...) # Sever existing file source
-  # Instantiate new blocks.file_source
-  self.connect(...)    # Wire new block to sinks
-  self.unlock()        # Resume GNU Radio scheduler
+  self.stop(); self.wait()            # Halt GNU Radio scheduler
+  self.disconnect(file_source, ...)   # Sever existing file source
+  self.file_source = blocks.file_source(filepath, ...)  # New source
+  self.connect(new_source, throttle)  # Rewire to throttle → sinks
+  self.start()                        # Resume GNU Radio scheduler
   ```
 
 ### 2.4 Physical Metrics & Metadata Core (`src/sigma_analyzer_core.py`)
@@ -130,8 +132,15 @@ Adheres to a **truth-in-metrics** philosophy where actual physical properties ar
 
 ### 2.5 Audio Subsystem (`AudioManager` in `sigma_main_window.py`)
 Enables listening to both acoustic baseband files and raw RF signals:
-- **RF Envelope Demodulator**: Computes the complex magnitude envelope $|x[n]|$, strips DC bias, normalizes peak amplitude, decimates the sample rate to $44.1\text{ kHz}$, and synthesizes standard 16-bit PCM WAV audio.
-- **Non-blocking Playback**: Employs the native Windows Multimedia API via Python's `winsound` with `SND_ASYNC` and `SND_FILENAME`, preventing any UI freezes during playback.
+- **Multi-Mode RF Demodulator**: Three demodulation paths, auto-selected by signal characteristics:
+  1. **FM Discriminator** (strong FM/FSK, phase std dev > 0.15): Instantaneous phase difference $\angle(x[n] \cdot x^*[n-1])$.
+  2. **Envelope Detector** (strong AM/ASK, amplitude std dev > 0.12): $|x[n]|$ with DC removal.
+  3. **BFO Heterodyne Mixer** (digital PSK / CW): Multiplies baseband IQ by a complex 1.2 kHz tone, producing an audible pitch from phase transitions.
+  - Output is a weighted blend of the dominant mode.
+- **Anti-aliasing Decimation**: Samples are averaged in blocks of size `samp_rate / 44100` to suppress aliasing before resampling to exactly 44.1 kHz.
+- **Short Signal Looping**: Recordings shorter than 3 seconds are tiled (up to 80×) so playback is long enough to hear.
+- **Non-blocking Playback**: Employs the native Windows Multimedia API via `winsound` with `SND_ASYNC | SND_FILENAME | SND_LOOP`, preventing any UI freezes during playback.
+- **Synchronized Visualization**: When audio playback begins, `start_waves(rewind=True)` is called so live plots animate in sync with the audio stream.
 
 ---
 

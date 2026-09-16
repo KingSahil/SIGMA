@@ -76,31 +76,47 @@ graph LR
 
 ## 4. Audio Preview Generation Algorithm
 
-To enable instant listening of RF recordings without external demodulators, `AudioManager` extracts an audible baseband preview using **envelope demodulation**:
+To enable instant listening of RF recordings without external demodulators, `AudioManager._convert_iq_to_audio_wav()` uses a **multi-mode demodulator** that auto-selects based on signal characteristics:
 
 ```
-[Raw IQ Buffer]
+[Raw IQ Buffer (up to 1,000,000 samples)]
        │
        ▼
-[np.abs(samples)]             --> Envelope Detection: |I + jQ|
+[Tile / Loop]                 --> If duration < 3.0 s, repeat samples up to 80× to ensure audible playback
        │
        ▼
-[envelope - mean(envelope)]   --> DC Offset Removal
+[Anti-aliasing Decimate]      --> Average blocks of size samp_rate/44100 → initial audio rate
        │
-       ▼
-[audio / max(audio)]          --> Normalization to unity gain
-       │
-       ▼
-[audio[::decimation_factor]]  --> Decimation to 44.1 kHz (target audio rate)
-       │
-       ▼
-[audio * 32767 as int16]      --> Quantization to 16-bit signed PCM
-       │
-       ▼
-[*_audio_preview.wav]         --> Export temporary WAV file
-       │
-       ▼
-[winsound.PlaySound(...)]     --> Non-blocking Windows audio playback
+       ├──────────────────────────────────────────────────────┐
+       ▼                                                      ▼
+[FM Discriminator]                                   [BFO Heterodyne Mixer]
+angle(x[n] * conj(x[n-1]))                          x[n] * exp(j·2π·1200·t)
+       │                                                      │
+       ▼                                                      ▼
+[Envelope Detector]                                  [real(heterodyne)]
+np.abs(x[n]) - DC                                            │
+       │                                                      │
+       └─────────── Weighted Blend (by signal type) ─────────┘
+                           │
+                           ▼
+            FM std > 0.15  →  75% FM + 25% BFO
+            Amp std > 0.12  →  75% Envelope + 25% BFO
+            Otherwise       →  100% BFO (PSK / CW)
+                           │
+                           ▼
+[Normalize to ±0.88]      --> Peak normalization to prevent clipping
+                           │
+                           ▼
+[Resample to 44100 Hz]    --> Linear interpolation to exact 44.1 kHz
+                           │
+                           ▼
+[audio * 32767 as int16]  --> Quantization to 16-bit signed PCM
+                           │
+                           ▼
+[*_audible.wav]           --> Export temporary WAV file
+                           │
+                           ▼
+[winsound.PlaySound(..., SND_ASYNC | SND_LOOP)] --> Non-blocking looping Windows audio playback
 ```
 
 ---
@@ -118,13 +134,13 @@ graph LR
 
     style S1 fill:#10b981,stroke:#047857,color:#ffffff
     style S2 fill:#10b981,stroke:#047857,color:#ffffff
-    style S3 fill:#1e293b,stroke:#475569,color:#94a3b8
+    style S3 fill:#10b981,stroke:#047857,color:#ffffff
     style S4 fill:#1e293b,stroke:#475569,color:#94a3b8
     style S5 fill:#1e293b,stroke:#475569,color:#94a3b8
 ```
 
-1. **Input**: File ingestion, format detection, sample count calculation, buffer sizing.
-2. **Analysis**: Time/frequency/constellation visual rendering, RMS voltage, peak amplitude, and peak frequency estimation.
-3. **Modulation**: Classification of candidate modulations (AM, FM, ASK, FSK, BPSK, QPSK, QAM).
-4. **Demodulation**: Carrier recovery, symbol synchronization, and matched filtering.
-5. **Bits**: Decision slicing and binary data stream extraction.
+1. **Input** ✅: File ingestion, format detection (`complex64` IQ or WAV), sample count calculation, WAV-to-IQ conversion.
+2. **Analysis** ✅: Time/frequency/constellation/waterfall visual rendering, RMS voltage, peak amplitude, peak frequency estimation, 99% OBW, noise floor, and SNR.
+3. **Modulation** ✅: Feature extraction (instantaneous phase variance, amplitude variance) and classification of candidate modulations (AM, FM, ASK, FSK, BPSK, QPSK, 8PSK, QAM, CW) with confidence score.
+4. **Demodulation** 🔄: Carrier recovery, symbol synchronization, and matched filtering — planned for next sprint.
+5. **Bits** 🔄: Decision slicing and binary data stream extraction — planned for next sprint.
