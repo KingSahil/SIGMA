@@ -260,6 +260,71 @@ QLabel.BigModulationConfidence {{
     font-weight: 600;
 }}
 
+/* Demodulation / Bitstream readout (monospace payload display) */
+QLabel.DemodValue {{
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 13px;
+    font-weight: 800;
+    color: {COLORS['accent_success']};
+}}
+
+QLabel.DemodValueWarn {{
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 13px;
+    font-weight: 800;
+    color: {COLORS['accent_warn']};
+}}
+
+QLabel.DemodValueIdle {{
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 13px;
+    font-weight: 800;
+    color: {COLORS['text_muted']};
+}}
+
+QLabel.DemodReason {{
+    font-size: 11px;
+    color: {COLORS['accent_warn']};
+    font-weight: 600;
+}}
+
+QLabel.DemodBitstream {{
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: {COLORS['accent_i']};
+    background-color: {COLORS['bg_plot']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 6px;
+    padding: 6px 8px;
+    letter-spacing: 1.5px;
+}}
+
+/* Sample-rate provenance.
+ *
+ * f_s cannot be measured from IQ samples, so the label matters as much as the
+ * number. Green = an external reference exists (operator-set, or derived from
+ * a recognised standard symbol rate). Amber = read from a filename token,
+ * which is a hint and breaks silently if the file was renamed. Muted grey =
+ * nothing was available and the value is a fallback. */
+QLabel.RateSourceOk {{
+    font-size: 11px;
+    font-weight: 700;
+    color: {COLORS['accent_success']};
+}}
+
+QLabel.RateSourceWarn {{
+    font-size: 11px;
+    font-weight: 700;
+    color: {COLORS['accent_warn']};
+}}
+
+QLabel.RateSourceIdle {{
+    font-size: 11px;
+    font-weight: 600;
+    color: {COLORS['text_muted']};
+}}
+
 /* Bottom Big Pipeline Stepper */
 QFrame.BigPipelineBar {{
     background-color: {COLORS['bg_card']};

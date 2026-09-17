@@ -21,6 +21,8 @@ graph TD
 
     subgraph CoreAnalysisTier ["2. Core Analysis & Metrics Tier"]
         SM["SignalMetadata (src/sigma_analyzer_core.py)"]
+        SR["Symbol Rate Estimator (src/sigma_symbol_rate.py)"]
+        DM["Digital Demodulator (src/sigma_demod.py)"]
         WAV["WAV/IQ Converter (load_and_convert_wav)"]
         NP["NumPy Vectorized DSP Core"]
     end
@@ -47,6 +49,11 @@ graph TD
 
     SM -->|Reads samples| IQ
     SM -->|Uses| NP
+    SM -->|Delegates R_s measurement| SR
+    MW -->|Runs demodulation| DM
+    SR -->|R_s + SPS + lock label| MW
+    MW -->|Gates stages 4/5 on lock quality| DM
+    DM -->|bits, symbols, EVM| MW
     WAV -->|Converts WAV to| IQ
 
     FG -->|Streams from| FS
@@ -84,9 +91,117 @@ The user interface implements Google Stitch / Material Design 3 dark mode aesthe
        - **Constellation Diagram**: Balanced aspect ratio IQ scatter plot for symbol decoding.
     4. **View Mode Switcher**: Five quick-toggle buttons (`⊞ 2x2 Grid`, `⏱ Time`, `📊 Spectrum`, `🌊 Waterfall`, `✦ Constellation`) that show/hide individual plot cards, enabling full-resolution single-sink deep inspection.
     5. **Interactive HUD Overlay**: Each plot card hosts a `QwtPlotZoomer` event bridge. Cursor clicks and drags update an overlay `QLabel` badge with live coordinate readouts (time in µs/ms, frequency in kHz/MHz, amplitude dB, or I/Q values). Right-click unzooms and resets the hint text.
-    6. **Results Section**: 2×4 grid of real-time DSP physical metrics (Peak Frequency, Center Frequency, 99% Occupied Bandwidth, Signal Power dBFS, Noise Floor, SNR dB, RMS Amplitude, Peak Amplitude) and a dedicated **Modulation Classifier** with confidence score.
+    6. **Results Section**: 3-row metric grid of real-time DSP physical metrics — row 1 (Peak Frequency, Center Frequency, 99% Occupied Bandwidth, Signal Power dBFS), row 2 (Noise Floor, SNR dB, RMS Amplitude, Peak Amplitude), row 3 (**Symbol Rate**, **Samples per Symbol**, **Symbol Rate Lock**) — plus a dedicated **Modulation Classifier** panel.
     7. **Pipeline Stepper**: Horizontal status tracker marking completed and pending stages:
-       `1. INPUT ✓` → `2. ANALYSIS ✓` → `3. MODULATION ✓` → `4. DEMOD ○` → `5. BITS ○`.
+       `1. INPUT ✓` → `2. ANALYSIS ✓` → `3. MODULATION ✓` → `4. DEMOD` → `5. BITS`.
+       Stages 4 and 5 are driven by `_run_demod_stage()`, which calls the real demodulator and **gates promotion on symbol-rate lock quality** — see §2.8.
+    8. **Demodulation & Bitstream Card**: a full-width readout of the Stage 4/5 result — state (`LOCKED` / `DECLINED` / `NO CLOCK` / `UNSUPPORTED`), the method used, symbol/bit counts, EVM, recovered carrier offset, the `SPS` actually used, and the leading 48 recovered bits. When the stage declines, the card shows the measured reason and leaves the bitstream as `--`. The live `DemodResult` is also kept on `self.demod_result` for inspection.
+    9. **Startup File Selection**: `resolve_sample_path()` chooses the file the app opens on, preferring a capture the *entire* pipeline can complete (`data/iq/demo_bpsk_100ksps_1msps.iq`) over the synthetic `signal.iq`, which has no recoverable symbol clock. An explicitly supplied path always wins, so the refusal path stays reproducible on demand.
+
+### 2.6 Symbol Rate Estimation (`src/sigma_symbol_rate.py`)
+
+A pulse-shaped digital signal is **cyclostationary**: the pulse-shaping filter
+leaves an amplitude ripple that repeats once per symbol, so the envelope
+`|x[n]|²` carries a periodic component at exactly `R_s`. That appears as a
+spectral line in the FFT of the envelope.
+
+```mermaid
+graph LR
+    X["x[n] complex"] --> Env["|x[n]|^2"]
+    Env --> Mean["Remove DC mean"]
+    Mean --> Welch["Welch average:<br/>16384-pt FFT, Hann window,<br/>50% overlap"]
+    Welch --> Peak["Peak search + sub-bin<br/>parabolic interpolation"]
+    Peak --> Fund["_resolve_fundamental():<br/>reject sub-harmonics"]
+    Fund --> Res["R_s, SPS = f_s/R_s,<br/>prominence dB, lock label"]
+```
+
+Two details are load-bearing and both were found by measurement:
+
+1. **Welch averaging is mandatory.** A single FFT of a noise-like sequence has
+   ~100% spectral variance, so one noise bin readily outranks the real clock line.
+2. **The FFT must be long.** At `nfft=1024` @ 1 Msps the bins are ~976 Hz wide and
+   the clock line drowns in the signal's own leakage. Moving to `nfft=16384`
+   took the error from **±42% → 0.00%**.
+
+Output carries an explicit confidence label (`HIGH` / `MEDIUM` / `LOW`) derived
+from peak prominence over the local noise floor. A low-alpha envelope spectrum
+is nearly flat; in that regime the estimator reports `no lock` rather than a
+plausible-looking wrong number.
+
+### 2.7 Digital Demodulation (`src/sigma_demod.py`)
+
+```mermaid
+graph LR
+    X["x[n] + f_s"] --> CR["1. Carrier recovery<br/>(4th-power method)"]
+    CR --> MF["2. RRC matched filter<br/>(alpha from L2)"]
+    MF --> ST["3. Symbol timing<br/>(best sampling phase,<br/>scored by constellation fit)"]
+    ST --> PC["4. Phase correction<br/>(rotation search over<br/>constellation symmetry)"]
+    PC --> Dec["5. Decision +<br/>bit mapping"]
+    Dec --> Out["DemodResult:<br/>bits, symbols, EVM,<br/>offset, lock state"]
+```
+
+- **Carrier recovery** — raising to the M-th power strips the PSK modulation,
+  leaving a carrier line at `M × Δf`. `x²` vs `x⁴` line prominence also reveals
+  the PSK order.
+- **Timing** — the best sampling phase is chosen by how tightly symbols cluster
+  on the constellation, *not* by envelope amplitude.
+- **Phase correction** — a rotation search over the allowed symmetry rotations
+  (BPSK 180°, QPSK 90°) replaces an earlier `xⁿ` mean-phase method that left a
+  −41.5° residual and cost a constant 50% BER.
+- **Refusal** — `DemodResult.locked` is `False` when the input is unusable,
+  with a `reason` string. `EVM` acts as a quality guard.
+
+**Verified: 46/46 configurations at exactly 100.00% bit accuracy, BER 0.0000**,
+using the *detected* symbol rate rather than the true one. See
+[`VERIFICATION.md`](VERIFICATION.md).
+
+### 2.8 Pipeline Gating (`_run_demod_stage()` in `sigma_main_window.py`)
+
+Stages 4 and 5 are promoted only when the symbol-rate lock is at least `MEDIUM`:
+
+```python
+if not sr or not sr.get("locked"):
+    self.lbl_demod.setToolTip("No symbol rate lock, so there is no clock to sample at.")
+    return
+if sr.get("confidence_label") == "LOW":
+    self.lbl_demod.setToolTip(
+        f"Symbol rate lock is only LOW ({sr['prominence_db']:.1f} dB over the noise "
+        f"floor), so the bitstream would be sampled on an untrusted clock. Declined.")
+    return
+```
+
+This is a deliberate design decision, not a missing feature. A bitstream
+sampled on a clock that is not trusted is **plausible and wrong**, which is a
+worse outcome for an intelligence tool than an explicit refusal with a reason.
+
+#### Choosing the demodulator: let the lock decide, not a string test
+
+The classifier can return a label naming two possibilities — `"BPSK / 2-FSK"`
+is produced when `amp_std < 0.12 and f_std > 0.4`, the signature of constant
+envelope plus high phase variance after differencing. That is exactly what a
+BPSK demodulator resolves, so refusing it would reject a file the classifier
+just measured as *possibly BPSK*. Instead the gate picks the PSK reading and
+lets the demodulator's own lock be the arbiter:
+
+```python
+mod = m.modulation_class or ""
+if "QPSK" in mod:        label = "QPSK"
+elif "BPSK" in mod:      label = "BPSK"
+elif "PSK" in mod:       # "Digital PSK/FSK", "8PSK" — not sliceable
+    self._reset_demod_panel("UNSUPPORTED", reason); return
+else:                    # CW, AM/ASK, unknown
+    self._reset_demod_panel("UNSUPPORTED", reason); return
+```
+
+`QPSK` is tested first because a combined label could name both and `"QPSK"`
+contains no substring `"BPSK"`. Only a genuinely different constellation order
+(8PSK) or a non-PSK class (CW, AM/ASK) is refused up front.
+
+A false positive here is harmless: a BPSK reading of a 2-FSK signal simply
+fails to lock and the stage declines *with its own measured reason*, which is
+strictly more informative than a string match refusing it. Verified by
+`scratch/verify_demod_gate.py` over an 8-label matrix: BPSK, `BPSK / 2-FSK`,
+QPSK and `QPSK / 8PSK` lock; 8PSK, `Digital PSK/FSK`, AM/ASK and CW decline.
 - **`AudioManager`**:
   - Handles both direct WAV playback and multi-mode IQ audio demodulation (see §2.5).
 - **`SettingsDialog`**:
@@ -125,10 +240,31 @@ Adheres to a **truth-in-metrics** philosophy where actual physical properties ar
   $$P_{\text{dBFS}} = 10 \log_{10} (A_{\text{RMS}}^2)$$
 - **Peak Frequency Estimation**:
   Applies a Blackman window to the initial batch of samples, computes an FFT shift, and extracts the peak bin offset relative to the configured RF center frequency.
+- **Symbol Rate & SPS**: Delegated to `sigma_symbol_rate.py` (§2.6). Stored on the metadata object as `symbol_rate`, `samples_per_symbol`, `symbol_rate_confidence`, and the full `symbol_rate_result` dict (consumed by the demodulation stage).
+- **Modulation Classification**: Measurement-driven, in this order:
+  1. `_detect_psk_order(data)` — compares 2nd- vs 4th-power carrier-line prominence, requiring a 3 dB margin. Returns 2 (BPSK), 4 (QPSK), or 0 (undetermined).
+  2. Falls back to feature statistics: `amp_std` and phase-derivative `f_std` separate CW, AM/ASK, and BPSK/2-FSK.
+  3. Only if the measurement is *indeterminate* is a filename token applied, and it is labelled `filename hint, unverified`.
+
+  > [!WARNING]
+  > An earlier revision returned **hardcoded confidences** (`"96.4%"`, `"94.8%"`, `"92.1%"`) whenever the filename contained `bpsk`/`qpsk`/`fm`/`rds`, and it *shadowed* the real measured statistics computed just above it. Renaming a file changed the reported modulation. This is fixed and guarded by a test: `bpsk_modulated_1msps.iq` renamed to `anonymous_capture.iq` still reports `BPSK | measured`.
 - **WAV-to-IQ Converter (`load_and_convert_wav`)**:
   - Handles stereo WAV files (mapping Left channel $\to$ In-Phase $I$, Right channel $\to$ Quadrature $Q$).
   - Handles mono WAV recordings (mapping Mono $\to$ Real baseband with $0j$ imaginary component).
   - Normalizes integer PCM ($16\text{-bit} \to [-1.0, 1.0]$) and writes an IEEE 754 `complex64` binary file.
+
+> [!NOTE]
+> This module imports its siblings in **dual mode** (relative first, flat
+> fallback) because `run.py` adds `src/` to `sys.path` and imports modules
+> flat rather than as a package:
+> ```python
+> try:
+>     from .sigma_symbol_rate import estimate_symbol_rate
+> except ImportError:            # running as a flat script, as run.py does
+>     from sigma_symbol_rate import estimate_symbol_rate
+> ```
+> A plain relative import here causes `ImportError: attempted relative import
+> with no known parent package` **at application startup**.
 
 ### 2.5 Audio Subsystem (`AudioManager` in `sigma_main_window.py`)
 Enables listening to both acoustic baseband files and raw RF signals:

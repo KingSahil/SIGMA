@@ -16,32 +16,75 @@ try:
     from .sigma_theme import COLORS, MAIN_QSS, create_sigma_icon
     from .sigma_analyzer_core import SignalMetadata, load_and_convert_wav
     from .sigma_flowgraph import SigmaFlowgraph
+    from .sigma_demod import format_bitstream_summary
+    from .sigma_sample_rate import (
+        resolve_sample_rate_file, format_sample_rate, format_sample_rate_source,
+    )
 except ImportError:
     from sigma_theme import COLORS, MAIN_QSS, create_sigma_icon
     from sigma_analyzer_core import SignalMetadata, load_and_convert_wav
     from sigma_flowgraph import SigmaFlowgraph
+    from sigma_demod import format_bitstream_summary
+    from sigma_sample_rate import (
+        resolve_sample_rate_file, format_sample_rate, format_sample_rate_source,
+    )
+
+
+_STARTUP_DEMO = "demo_bpsk_100ksps_1msps.iq"
+
+
+def _iq_search_dirs():
+    """Directories that may hold bundled captures, relative to this file."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.abspath(os.path.join(here, os.pardir))
+    return [
+        os.path.join(root, "data", "iq"),
+        os.path.join(root, "data"),
+        root,
+        here,
+    ]
+
+
+def find_startup_demo():
+    """Path to the capture the app should open on, or None.
+
+    The app must open on a file the *whole* pipeline can finish. The bundled
+    signal.iq is synthetic and carries no recoverable symbol clock, so it
+    always halts at stage 3 and the first screen a reviewer sees is a declined
+    DEMOD step. We therefore prefer a capture known to lock.
+    """
+    for d in _iq_search_dirs():
+        p = os.path.join(d, _STARTUP_DEMO)
+        if os.path.exists(p):
+            return p
+    return None
 
 
 def resolve_sample_path(filepath=None):
-    """Resolves an IQ sample file path, checking standard data locations."""
-    if filepath and os.path.exists(filepath):
-        return os.path.abspath(filepath)
+    """Resolves an IQ sample file path, checking standard data locations.
 
-    candidates = []
+    An explicit, existing path always wins -- if the user picked a file, we
+    load that file and nothing else. The default is only chosen when no usable
+    path was supplied.
+    """
     if filepath:
-        candidates.append(filepath)
+        if os.path.exists(filepath):
+            return os.path.abspath(filepath)
+        # A bare name like "signal.iq" -- look for it in the standard dirs
+        # before falling back to the startup demo.
+        for d in _iq_search_dirs():
+            p = os.path.join(d, os.path.basename(filepath))
+            if os.path.exists(p):
+                return os.path.abspath(p)
 
-    candidates.extend([
-        "data/iq/signal.iq",
-        "data/signal.iq",
-        "signal.iq",
-        os.path.join(os.path.dirname(__file__), "..", "data", "iq", "signal.iq"),
-        os.path.join(os.path.dirname(__file__), "..", "data", "signal.iq"),
-        os.path.join(os.path.dirname(__file__), "..", "signal.iq"),
-    ])
-    for c in candidates:
-        if os.path.exists(c):
-            return os.path.abspath(c)
+    demo = find_startup_demo()
+    if demo:
+        return demo
+
+    for d in _iq_search_dirs():
+        p = os.path.join(d, "signal.iq")
+        if os.path.exists(p):
+            return os.path.abspath(p)
     return filepath if filepath else "signal.iq"
 
 
@@ -239,12 +282,13 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
     Big, modern, user-friendly Google Stitch design with native audio playback.
     """
 
-    def __init__(self, initial_file="signal.iq"):
+    def __init__(self, initial_file=None):
         super().__init__()
         self.setWindowTitle("SIGMA — Signal Intelligence & Generalized Modulation Analyzer")
         self.setWindowIcon(create_sigma_icon())
-        self.resize(1400, 880)
         self.setMinimumSize(960, 600)
+        # NOTE: window sizing happens at the end of _init_ui(), once the
+        # layout exists and its sizeHint can actually be measured.
 
         # Application state
         self.original_file = resolve_sample_path(initial_file)
@@ -280,6 +324,44 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         # Populate initial plot preview and keep waves frozen (only move when playing audio)
         self.flowgraph.capture_preview(duration_sec=0.15)
 
+    def _apply_initial_geometry(self):
+        """Open at a size that shows the whole panel stack where possible.
+
+        The required height is asked of the layout rather than hardcoded:
+        `sizeHint()` on the scroll content tells us exactly how tall the
+        stack wants to be, so adding a results card cannot silently push
+        content below the fold again. A hardcoded 950 was already too small
+        once the DEMODULATION card was added (the stack wants ~921px of
+        content plus chrome).
+
+        If the screen cannot fit that, fall back to the largest size that
+        fits inside the available area rather than opening off-screen.
+        """
+        want_w = 1400
+        hint = None
+        try:
+            hint = self.scroll_area.widget().sizeHint().height()
+        except Exception:
+            pass
+        # Chrome: window title bar, header, input bar and margins.
+        want_h = (hint + 150) if hint else 1000
+        want_h = max(700, want_h)
+
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            # Leave a small margin so window decorations stay on screen.
+            fit_w = max(960, min(want_w, avail.width() - 40))
+            fit_h = max(600, min(want_h, avail.height() - 60))
+            self.resize(fit_w, fit_h)
+            # Centre it; a window that opens flush to a corner looks broken.
+            self.move(
+                avail.x() + (avail.width() - fit_w) // 2,
+                avail.y() + (avail.height() - fit_h) // 2,
+            )
+        else:
+            self.resize(want_w, want_h)
+
     # =========================================================================
     # Main UI Construction
     # =========================================================================
@@ -291,6 +373,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setCentralWidget(scroll)
+        self.scroll_area = scroll
 
         central = QtWidgets.QWidget()
         central.setObjectName("CentralWidget")
@@ -314,6 +397,11 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
         # 5. Bottom: Big Clean Processing Flow
         main_layout.addWidget(self._build_processing_flow())
+
+        # Size the window now that the layout exists and can be measured.
+        # Calling this from __init__ before _init_ui() built anything meant
+        # the sizeHint was unavailable and the height fell back to a guess.
+        self._apply_initial_geometry()
 
     # =========================================================================
     # 1. Big Header Section
@@ -388,6 +476,17 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.badge_duration)
 
         layout.addStretch(1)
+
+        # Sample-rate provenance.
+        #
+        # f_s cannot be measured from IQ samples (see sigma_sample_rate.py), so
+        # whatever number we show is a label, not a measurement. This line makes
+        # the difference visible: an operator-set or protocol-derived rate
+        # (MEASURED) looks different from one read out of a filename string
+        # (INFERRED), which in turn differs from a bare fallback (ASSUMED).
+        self.lbl_rate_source = QtWidgets.QLabel("Sample rate: --")
+        self.lbl_rate_source.setProperty("class", "RateSource")
+        layout.addWidget(self.lbl_rate_source)
 
         self.btn_load_signal = QtWidgets.QPushButton("📂 Load Signal File")
         self.btn_load_signal.setProperty("class", "PrimaryBtn")
@@ -672,9 +771,22 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
     # 4. Section 3: Results (Signal Analysis & Modulation)
     # =========================================================================
     def _build_results_section(self):
-        container = QtWidgets.QHBoxLayout()
-        container.setContentsMargins(0, 0, 0, 0)
-        container.setSpacing(10)
+        # Two rows:
+        #   row 1 - Signal Analysis (metrics grid) + Modulation
+        #   row 2 - Demodulation / Bitstream readout, full width
+        #
+        # The demodulation readout is naturally wide (monospace bitstream plus
+        # a stats line), so placing it beside the metric grid forced the whole
+        # window's minimum width past the screen and produced a horizontal
+        # scrollbar. Giving it its own full-width row keeps the window inside
+        # 1400px while showing more, not less.
+        outer = QtWidgets.QVBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(10)
+
+        row1 = QtWidgets.QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(10)
 
         # 1. Signal Analysis Card
         card_analysis = QtWidgets.QFrame()
@@ -702,6 +814,15 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.m_rms = self._create_big_metric_cell("RMS Amplitude", "--")
         self.m_peak_amp = self._create_big_metric_cell("Peak Amplitude", "--")
 
+        # Symbol rate row (Stage 4 prerequisite for timing recovery)
+        self.m_symbol_rate = self._create_big_metric_cell(
+            "Symbol Rate", "--", is_highlight=True
+        )
+        self.m_sps = self._create_big_metric_cell("Samples/Symbol", "--")
+        self.m_symrate_conf = self._create_big_metric_cell(
+            "Symbol Rate Lock", "--"
+        )
+
         # Row 1
         grid.addWidget(self.m_peak_freq[0], 0, 0)
         grid.addWidget(self.m_center_freq[0], 0, 1)
@@ -714,8 +835,13 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         grid.addWidget(self.m_rms[0], 1, 2)
         grid.addWidget(self.m_peak_amp[0], 1, 3)
 
+        # Row 3
+        grid.addWidget(self.m_symbol_rate[0], 2, 0)
+        grid.addWidget(self.m_sps[0], 2, 1)
+        grid.addWidget(self.m_symrate_conf[0], 2, 2)
+
         lay_an.addLayout(grid)
-        container.addWidget(card_analysis, 7)
+        row1.addWidget(card_analysis, 7)
 
         # 2. Modulation Card
         card_mod = QtWidgets.QFrame()
@@ -744,10 +870,72 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         box_lay.addWidget(self.lbl_mod_conf)
 
         lay_mod.addWidget(mod_box, 1)
-        container.addWidget(card_mod, 3)
+        row1.addWidget(card_mod, 3)
+
+        outer.addLayout(row1)
+
+        # 3. Demodulation / Bitstream Card (full width, own row)
+        #
+        # The demodulator produces real numbers (symbol count, EVM, carrier
+        # offset, the first bits). Previously they only reached a tooltip,
+        # which meant a verified-stage looked like a tick mark with nothing
+        # behind it. Surface them.
+        card_demod = QtWidgets.QFrame()
+        card_demod.setProperty("class", "SigmaBigCard")
+        lay_dm = QtWidgets.QVBoxLayout(card_demod)
+        lay_dm.setContentsMargins(12, 8, 12, 8)
+        lay_dm.setSpacing(5)
+
+        t_dm = QtWidgets.QLabel("DEMODULATION & BITSTREAM")
+        t_dm.setProperty("class", "SectionTitle")
+        lay_dm.addWidget(t_dm)
+
+        dm_box = QtWidgets.QFrame()
+        dm_box.setProperty("class", "BigModulationBox")
+        dm_lay = QtWidgets.QVBoxLayout(dm_box)
+        dm_lay.setContentsMargins(10, 6, 10, 6)
+        dm_lay.setSpacing(6)
+
+        # Row 1 -- status (LOCKED / DECLINED) + method used
+        dm_row1 = QtWidgets.QHBoxLayout()
+        dm_row1.setSpacing(8)
+        self.lbl_demod_state = QtWidgets.QLabel("NOT RUN")
+        self.lbl_demod_state.setProperty("class", "DemodValueIdle")
+        dm_row1.addWidget(self.lbl_demod_state)
+        dm_row1.addStretch(1)
+        self.lbl_demod_method = QtWidgets.QLabel("--")
+        self.lbl_demod_method.setProperty("class", "BigModulationConfidence")
+        dm_row1.addWidget(self.lbl_demod_method)
+        dm_lay.addLayout(dm_row1)
+
+        # Row 2 -- the measured quality numbers
+        self.lbl_demod_stats = QtWidgets.QLabel("--")
+        self.lbl_demod_stats.setProperty("class", "BigModulationConfidence")
+        self.lbl_demod_stats.setWordWrap(True)
+        dm_lay.addWidget(self.lbl_demod_stats)
+
+        # Row 3 -- why it did not run (hidden when it did)
+        self.lbl_demod_reason = QtWidgets.QLabel("")
+        self.lbl_demod_reason.setProperty("class", "DemodReason")
+        self.lbl_demod_reason.setWordWrap(True)
+        self.lbl_demod_reason.setVisible(False)
+        dm_lay.addWidget(self.lbl_demod_reason)
+
+        # Row 4 -- the actual recovered bits
+        t_bits = QtWidgets.QLabel("RECOVERED BITSTREAM (first bits)")
+        t_bits.setProperty("class", "BigMetricLabel")
+        dm_lay.addWidget(t_bits)
+
+        self.lbl_bitstream = QtWidgets.QLabel("--")
+        self.lbl_bitstream.setProperty("class", "DemodBitstream")
+        self.lbl_bitstream.setWordWrap(True)
+        dm_lay.addWidget(self.lbl_bitstream)
+
+        lay_dm.addWidget(dm_box, 1)
+        outer.addWidget(card_demod)
 
         res_widget = QtWidgets.QWidget()
-        res_widget.setLayout(container)
+        res_widget.setLayout(outer)
         return res_widget
 
     def _create_big_metric_cell(self, label, default_val="--", is_highlight=False):
@@ -802,17 +990,17 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         arr3.setProperty("class", "BigPipelineArrow")
         layout.addWidget(arr3)
 
-        lbl_demod = QtWidgets.QLabel("4. DEMOD ○")
-        lbl_demod.setProperty("class", "BigPipelineStepPending")
-        layout.addWidget(lbl_demod)
+        self.lbl_demod = QtWidgets.QLabel("4. DEMOD ○")
+        self.lbl_demod.setProperty("class", "BigPipelineStepPending")
+        layout.addWidget(self.lbl_demod)
 
         arr4 = QtWidgets.QLabel("→")
         arr4.setProperty("class", "BigPipelineArrow")
         layout.addWidget(arr4)
 
-        lbl_bits = QtWidgets.QLabel("5. BITS ○")
-        lbl_bits.setProperty("class", "BigPipelineStepPending")
-        layout.addWidget(lbl_bits)
+        self.lbl_bits = QtWidgets.QLabel("5. BITS ○")
+        self.lbl_bits.setProperty("class", "BigPipelineStepPending")
+        layout.addWidget(self.lbl_bits)
 
         layout.addStretch(1)
 
@@ -867,6 +1055,29 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.badge_rate.setText(f"Rate: {sr_str}")
         self.badge_duration.setText(f"{m.duration_str} ({m.filesize_str})")
 
+        # Sample-rate provenance line.
+        #
+        # Colour carries the meaning here: green = we have an external
+        # reference (operator or a matched standard), amber = a filename
+        # string we chose to trust, muted = we fell back and are guessing.
+        conf = getattr(m, "sample_rate_confidence", "--")
+        src_txt = getattr(m, "sample_rate_source", "--")
+        warn = getattr(m, "sample_rate_warning", "")
+        self.lbl_rate_source.setText(f"Sample rate: {src_txt}")
+        if conf == "MEASURED":
+            self.lbl_rate_source.setProperty("class", "RateSourceOk")
+        elif conf == "INFERRED":
+            self.lbl_rate_source.setProperty("class", "RateSourceWarn")
+        else:
+            self.lbl_rate_source.setProperty("class", "RateSourceIdle")
+        self.lbl_rate_source.setToolTip(
+            f"{src_txt}\nf_s is not measurable from IQ samples; "
+            f"this value is {conf}."
+            + (f"\n\n{warn}" if warn else "")
+        )
+        self.lbl_rate_source.style().unpolish(self.lbl_rate_source)
+        self.lbl_rate_source.style().polish(self.lbl_rate_source)
+
         # Results: Signal Analysis
         self.m_peak_freq[1].setText(m.peak_frequency)
         self.m_center_freq[1].setText(cf_str)
@@ -878,9 +1089,175 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.m_rms[1].setText(m.rms_amplitude)
         self.m_peak_amp[1].setText(m.peak_amplitude)
 
+        # Symbol rate estimation results
+        self.m_symbol_rate[1].setText(m.symbol_rate)
+        self.m_sps[1].setText(m.samples_per_symbol)
+        self.m_symrate_conf[1].setText(m.symbol_rate_confidence)
+
         # Modulation
         self.lbl_mod_class.setText(m.modulation_class)
         self.lbl_mod_conf.setText(f"Confidence: {m.modulation_confidence}")
+
+        self._run_demod_stage()
+
+    def _reset_demod_panel(self, state_text, reason=None):
+        """Put the DEMODULATION card into a non-running state with an optional reason."""
+        self.lbl_demod_state.setText(state_text)
+        self.lbl_demod_state.setProperty("class", "DemodValueWarn")
+        self.lbl_demod_method.setText("--")
+        self.lbl_demod_stats.setText("--")
+        self.lbl_bitstream.setText("--")
+        if reason:
+            self.lbl_demod_reason.setText(reason)
+            self.lbl_demod_reason.setVisible(True)
+        else:
+            self.lbl_demod_reason.setVisible(False)
+        for w in (self.lbl_demod_state, self.lbl_demod_method):
+            w.style().unpolish(w)
+            w.style().polish(w)
+
+    def _run_demod_stage(self):
+        """Run demodulation on the loaded capture and update the pipeline steps.
+
+        Demodulation needs a symbol rate it can trust, so it only runs when
+        the estimator actually locked. When it does not lock -- or when the
+        modulation is not one the demodulator supports -- the steps stay
+        "not available" and the reason is shown. Reporting a refusal is the
+        point: a confident wrong bitstream would be worse than no bitstream.
+        """
+        m = self.metadata
+        sr = getattr(m, "symbol_rate_result", None)
+        self.demod_result = None
+
+        # Reset to pending, then promote only on real success.
+        self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=False)
+        self._set_pipeline_step(self.lbl_bits, "5. BITS", done=False)
+        self._reset_demod_panel("NOT RUN")
+
+        if not sr or not sr.get("locked"):
+            reason = "No symbol rate lock, so there is no clock to sample at."
+            self.lbl_demod.setToolTip(reason)
+            self._reset_demod_panel("NO CLOCK", reason)
+            return
+
+        # A LOW-confidence lock means the clock line is barely above the noise
+        # floor. Demodulating anyway would produce a plausible-looking
+        # bitstream sampled at a rate that is probably wrong, which is worse
+        # than declining. Require MEDIUM or better.
+        if sr.get("confidence_label") == "LOW":
+            reason = (f"Symbol rate lock is only LOW ({sr['prominence_db']:.1f} dB "
+                      f"over the noise floor), so the bitstream would be sampled "
+                      f"on an untrusted clock. Declined.")
+            self.lbl_demod.setToolTip(reason)
+            self._reset_demod_panel("DECLINED", reason)
+            return
+
+        # Which demodulator to run.
+        #
+        # "BPSK / 2-FSK" is an ambiguity in the *classifier*, not a disagreement
+        # with the demodulator: it fires on the signature of BPSK (constant
+        # envelope, high phase variance after differencing), which is precisely
+        # what a BPSK demodulator can resolve. The old test
+        # `"BPSK" in mod or "QPSK" in mod` excluded the QPSK half of a
+        # "QPSK / something" label too. Try the PSK reading and let the
+        # demodulator's own lock decide -- it is the thing that actually knows
+        # whether the bits came out, and it declines on its own if they did not.
+        #
+        # Order matters: QPSK must be tested first, because "QPSK" contains no
+        # "BPSK" but a label could name both.
+        mod = m.modulation_class or ""
+        if "QPSK" in mod:
+            label = "QPSK"
+        elif "BPSK" in mod:
+            label = "BPSK"
+        elif "PSK" in mod:
+            # "Digital PSK/FSK", "8PSK"... not a modulation we can slice.
+            reason = (f"Detected {mod}; the demodulator handles the PSK "
+                      f"constellations it can slice (BPSK, QPSK). Declined "
+                      f"rather than guessing a constellation order.")
+            self.lbl_demod.setToolTip(reason)
+            self._reset_demod_panel("UNSUPPORTED", reason)
+            return
+        else:
+            reason = (f"Demodulator supports BPSK and QPSK; "
+                      f"detected {mod or 'unknown'}.")
+            self.lbl_demod.setToolTip(reason)
+            self._reset_demod_panel("UNSUPPORTED", reason)
+            return
+
+        try:
+            samples = self._read_samples_for_demod()
+            if samples is None:
+                return
+
+            try:
+                from .sigma_demod import demodulate
+            except ImportError:
+                from sigma_demod import demodulate
+            res = demodulate(samples, self.samp_rate, modulation=label,
+                             sps=sr["samples_per_symbol"])
+            self.demod_result = res
+
+            if not res.locked:
+                self.lbl_demod.setToolTip(f"Demodulator declined: {res.reason}")
+                self._reset_demod_panel("DECLINED", res.reason)
+                return
+
+            self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=True)
+            self._set_pipeline_step(self.lbl_bits, "5. BITS", done=True)
+            self.lbl_demod.setToolTip(
+                f"{res.modulation}, {res.n_symbols} symbols, EVM {res.evm_percent:.1f}%")
+            self.lbl_bits.setToolTip(
+                f"{len(res.bits)} bits recovered, EVM {res.evm_percent:.1f}%")
+
+            # Populate the DEMODULATION card with the real measured output.
+            self.lbl_demod_state.setText("LOCKED")
+            self.lbl_demod_state.setProperty("class", "DemodValue")
+            self.lbl_demod_method.setText(
+                f"{res.modulation}  \u00b7  RRC matched filter")
+            self.lbl_demod_stats.setText(
+                f"Symbols: {res.n_symbols}      Bits: {len(res.bits)}      "
+                f"EVM: {res.evm_percent:.1f}%\n"
+                f"Carrier offset: {res.carrier_offset_hz:+,.0f} Hz      "
+                f"SPS used: {res.sps:.2f}      Timing: searched"
+            )
+            self.lbl_demod_reason.setVisible(False)
+            # 48 bits in spaced groups: long enough to be a real payload
+            # preview, short enough that the monospace label does not set the
+            # minimum width of the window.
+            bits_txt = format_bitstream_summary(res, max_bits=48)
+            spaced = " ".join(bits_txt[i:i + 4] for i in range(0, len(bits_txt), 4))
+            self.lbl_bitstream.setText(spaced)
+            for w in (self.lbl_demod_state, self.lbl_demod_method):
+                w.style().unpolish(w)
+                w.style().polish(w)
+        except Exception as e:
+            print(f"[SIGMA] Demodulation error: {e}")
+            self.lbl_demod.setToolTip(f"Demodulation error: {e}")
+            self._reset_demod_panel("ERROR", str(e))
+
+    def _read_samples_for_demod(self, max_samples=400_000):
+        """Read complex baseband samples from the loaded file for demodulation."""
+        path = self.current_file
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            data = np.fromfile(path, dtype=np.complex64)
+            if data.size == 0:
+                return None
+            # Demodulating a prefix is enough and keeps the UI responsive.
+            return data[:max_samples]
+        except Exception as e:
+            print(f"[SIGMA] Could not read samples for demodulation: {e}")
+            return None
+
+    def _set_pipeline_step(self, label_widget, text, done):
+        """Flip a pipeline step between completed and not-available styling."""
+        label_widget.setText(f"{text} ✓" if done else f"{text} ○")
+        label_widget.setProperty(
+            "class", "BigPipelineStepDone" if done else "BigPipelineStepPending")
+        label_widget.style().unpolish(label_widget)
+        label_widget.style().polish(label_widget)
 
     def _open_settings(self):
         dialog = SettingsDialog(self, self.samp_rate, self.center_freq)
@@ -891,6 +1268,11 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             self.flowgraph.set_samp_rate(self.samp_rate)
             self.flowgraph.set_center_freq(self.center_freq)
             self.metadata = SignalMetadata(self.current_file, self.samp_rate, self.center_freq)
+            # The operator just told us the rate. That is the single most
+            # trustworthy source in the whole ranking -- it outranks even a
+            # protocol match -- so label it accordingly instead of letting the
+            # metadata inherit a filename guess from the previous load.
+            self._mark_measured_rate("operator set")
             self._update_all_displays()
             if not self.audio_manager.is_playing:
                 self.flowgraph.capture_preview(0.15)
@@ -932,6 +1314,12 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
                 self.metadata = SignalMetadata(self.current_file, self.samp_rate, self.center_freq)
                 self.metadata.filename = os.path.basename(path)
                 self.metadata.datatype = "WAV Stereo IQ (fc32)" if is_stereo else "WAV Baseband Audio (fc32)"
+                # A WAV carries its own rate in its header, so this is a real
+                # measurement -- record it as such rather than letting the
+                # resolver call it an assumption.
+                self._mark_measured_rate("WAV header")
+                self.samp_rate = self.metadata.samp_rate
+                self.flowgraph.set_samp_rate(self.samp_rate)
                 self._update_all_displays()
                 self.flowgraph.capture_preview(0.15)
             except Exception as e:
@@ -940,18 +1328,39 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             # IQ binary file
             self.current_file = path
 
-            # Automatically infer sample rate if known from dataset filename
-            fname_lower = os.path.basename(path).lower()
-            if "250k" in fname_lower:
-                self.samp_rate = 250000
-            elif "1m" in fname_lower or "1msps" in fname_lower:
-                self.samp_rate = 1000000
+            # Resolve the sample rate from the filename with a priority-ordered
+            # parse rather than a substring test. The old version was:
+            #
+            #   if "250k" in fname_lower: self.samp_rate = 250000
+            #   elif "1m" in fname_lower or "1msps" in fname_lower: ...
+            #
+            # which mis-read "demo_bpsk_100ksps_1msps.iq" (it matched the
+            # symbol-rate token "100ksps" as 100 kSps) and silently kept
+            # whatever rate the previous file had set when nothing matched.
+            # The resolver handles both, and reports which token it used so a
+            # guess stays visibly a guess.
+            from_sr = resolve_sample_rate_file(path, fallback=self.samp_rate)
+            self.samp_rate = from_sr
 
             self.flowgraph.set_samp_rate(self.samp_rate)
             self.flowgraph.reload_file(self.current_file, repeat=self.is_looping)
             self.metadata = SignalMetadata(self.current_file, self.samp_rate, self.center_freq)
+            # The analyser may have corrected f_s from a matched standard
+            # symbol rate. Adopt it here so the flowgraph, the duration and the
+            # reported R_s all agree on one value.
+            if abs(self.metadata.samp_rate - self.samp_rate) > 1.0:
+                self.samp_rate = self.metadata.samp_rate
+                self.flowgraph.set_samp_rate(self.samp_rate)
             self._update_all_displays()
             self.flowgraph.capture_preview(0.15)
+
+    def _mark_measured_rate(self, why):
+        """Label the current metadata's sample rate as externally referenced."""
+        m = self.metadata
+        if m is None:
+            return
+        m.sample_rate_confidence = "MEASURED"
+        m.sample_rate_source = f"MEASURED - {why}"
 
     # Aliases for backwards compatibility
     def _load_iq_file(self):

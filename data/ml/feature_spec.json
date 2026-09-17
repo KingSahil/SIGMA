@@ -1,0 +1,21 @@
+{
+  "classes": [
+    "BPSK",
+    "QPSK",
+    "8PSK",
+    "16QAM"
+  ],
+  "n_scalar": 4,
+  "hist_shape": [
+    32,
+    32
+  ],
+  "n_features": 1028,
+  "scalar_names": [
+    "locked",
+    "lock_confidence",
+    "prominence_db",
+    "samples_per_symbol"
+  ],
+  "note": "Feature vector = 4 measured scalars + a 32x32 constellation-density histogram of DEMODULATED SYMBOLS (not raw IQ samples). The scalars are NOT modulation cues -- measured at chance on a 4-class problem. The constellation image is the load-bearing input; the scalars act as a quality gate."
+}

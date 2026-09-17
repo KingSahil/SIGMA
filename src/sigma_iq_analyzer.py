@@ -71,7 +71,10 @@ def main():
     qapp.setWindowIcon(create_sigma_icon())
 
     # Instantiate the SIGMA RF Intelligence Workstation
-    window = SigmaMainWindow(initial_file="signal.iq")
+    # No initial_file: let resolve_sample_path pick a capture the whole
+    # pipeline can run to completion on. Hardcoding "signal.iq" made the app
+    # open on a synthetic file that always halts at stage 3 (DEMOD declined).
+    window = SigmaMainWindow()
     window.setWindowIcon(create_sigma_icon())
     window.show()
 
