@@ -37,6 +37,13 @@ fec_ground_truth.py           convolutional encode/decode + the four
                               burst-error proofs. Also asserts the trellis
                               invariant that a reverse-from-bit traceback is
                               impossible -- see the note in the file.
+verify_interleaver_detect.py  NAMES the interleaver blind, using the
+                              decode -> re-encode residual as a codeword test.
+                              4/4 clean, 4/4 to 10% channel errors, 0/4 on
+                              random bits, with the failure boundary measured
+                              and reported. Also records two dead ends (a
+                              hand-fitted statistic, and a syndrome that
+                              wrongly assumed the code was systematic).
 
 The last three need PyQt5 (they set QT_QPA_PLATFORM=offscreen themselves).
 """
@@ -56,6 +63,7 @@ SCRIPTS = [
     "verify_demod_gate.py",
     "verify_gui_all_mods.py",
     "fec_ground_truth.py",
+    "verify_interleaver_detect.py",
 ]
 
 

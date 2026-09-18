@@ -11,27 +11,32 @@ says what is actually missing. Nothing here is estimated.*
 |---|---|
 | Problem-statement **requirements** | 5 sections (PS §3 i–v) |
 | **Fully done** | **0** — no section is complete |
-| **Partially done** | **2** — §3 i, §3 ii |
-| **Not started** | **3** — §3 iii, §3 iv, §3 v |
+| **Partially done** | **4** — §3 i, §3 ii, §3 iii, §3 iv |
+| **Not started** | **1** — §3 v |
 | Working DSP engine | ✅ yes, verified — **4 of 5** constellation families |
+| Working coding layer | 🟡 decode + interleaver **detection** work and are measured; **not wired into `src/`** |
 | Working ML classifier | 🟡 heuristic **done** (144/144); CNN **not built** |
 
-**Headline:** the *analysis + demodulation* engine is real and verified, and as of
-this revision it covers **four** constellations instead of two. The *coding layer*
-(de-interleaving + FEC) and the *CNN* still do not exist.
+**Headline:** the *analysis + demodulation* engine is real and verified, covering
+**four** constellations, and the *coding layer* now exists and is measured —
+which is the first movement on §3 iii/iv. What remains unwritten is the *CNN*
+and §3 v.
 
 **On the count going from "fully done 1" to "fully done 0"** — this is a
 **recount, not a regression**. §3 i was previously scored as fully done on the
 strength of the feature metrics alone, which was generous: *FEC-scheme
 identification* and *interleaving-type detection* are both named inside §3 i and
-neither has any code. Scoring each section against its own full text, no section
-is complete. Every individual item that moved this revision moved **up**:
+neither had any code at the time. Scoring each section against its own full text,
+no section is complete. Every individual item that has moved so far moved **up**:
 
 | Moved | From | To |
 |---|---|---|
 | Demodulable constellations | 2 (BPSK/QPSK) | **4** (+8PSK, +16QAM) |
 | PSK order identifiable from the signal | 2 | **4** (new symbol-domain classifier) |
 | Analogue signals correctly refused | not tested | **5/5** (incl. a real FM/RDS capture) |
+| Convolutional FEC decode | not started | **(2,1,3) 100.00%**, 20/20 flips corrected |
+| Interleaver modes implemented | 0 | **4** — all proven invertible |
+| Interleaver **type identified blind** | not started | **4/4** clean, 4/4 to 10% errors |
 
 ---
 
@@ -57,15 +62,15 @@ is complete. Every individual item that moved this revision moved **up**:
 |---|---|---|
 | i. **Sampling-frequency estimation** | ⚠️ **Resolved, not measured** | Provably impossible from samples alone. Resolved from ranked sources with `MEASURED`/`INFERRED`/`ASSUMED` labels. **25/25 verified** |
 | i. **Modulation classification** | 🟡 **Heuristic done, CNN not built** | Measurement-driven classifier works and is filename-independent. CNN dataset + baseline measured (97.7% on synthetic) but **no network exists** |
-| i. **FEC scheme identification** | ❌ **Not started** | — |
-| i. **Interleaving type detection** | ❌ **Not started** | — |
+| i. **FEC scheme identification** | 🟡 **Partially — code structure, not scheme** | The FEC **code** is known to the receiver in this harness (a (2,1,3) convolutional code). *Identifying an unknown* code from the stream is **not done** |
+| i. **Interleaving type detection** | ✅ **Done, measured** | **4/4 blind**, correct to 10% channel errors, abstains/errs past ~15%. See §3a |
 | i. **Other features** (SNR, power, BW, constellation) | ✅ **Done** | RMS, peak, dBFS, 99% OBW, noise floor, SNR, peak freq, constellation |
 | ii. **Demod — BPSK / QPSK** | ✅ **Done** | **100.00%** over the full sweep, using the *detected* symbol rate |
 | ii. **Demod — QAM (16QAM)** | ✅ **Done** | **99.98%** (min 99.97%) — the gate now lets it through |
 | ii. **Demod — PSK (8PSK)** | ✅ **Done** | **100.00%** over the full sweep. Was 51.70% (chance); the carrier exponent was hardcoded to `x**4` and is now `x**8` |
 | ii. **Demod — FSK** | ❌ **Not started** | — |
-| iii. **De-interleaving (4 modes)** | ❌ **Not started** | block / convolutional / diagonal / pseudo-random — none |
-| iv. **FEC (Viterbi / RS / LDPC)** | ❌ **Not started** | — |
+| iii. **De-interleaving (4 modes)** | 🟡 **Generators + generator blind-tested** | All 4 modes proven invertible. The **detector** names the mode blind: **4/4 clean, 4/4 to 10% channel errors, 0/4 on random bits**. Boundary measured (see §3a). Not yet wired into `src/` |
+| iv. **FEC (Viterbi / RS / LDPC)** | 🟡 **Convolutional done** | (2,1,3) encode + Viterbi **100.00%** noiseless; corrects **20/20** injected flips. Reed-Solomon / LDPC **not started** |
 | v. **Bitstream correlation, header detection** | ❌ **Not started** | — |
 
 ---
@@ -98,6 +103,67 @@ using the *detected* symbol rate rather than the true one.
 **Sample rate** — proven unmeasurable: 1000 samples with a clock every 10 is
 byte-identical to 2× rate with a clock every 20. So it is *resolved and labelled*
 (USER > WAV header > PROTOCOL > FILENAME > DEFAULT) instead of pretended-measured.
+
+**Interleaver identification** — the detector is handed the *interleaved coded
+bit stream* and the FEC code, but **not** the permutation. For each candidate
+mode it de-interleaves, decodes, re-encodes and measures the residual:
+
+```
+decode(bits) -> re-encode -> compare against bits
+```
+
+A genuine codeword reproduces itself exactly. Measured on 192 information bits:
+
+| input | residual |
+|---|---|
+| clean codeword | **0.0000** |
+| 3 channel errors | 0.0077 |
+| shuffled codeword | 0.1366 |
+| random bits | 0.1418 |
+
+The correct hypothesis scores exactly `0.0000` while every wrong one scores
+`0.046–0.148`. Blind detection results: **4/4** on a clean channel, **4/4** at
+every flip rate up to **10%**, **0/4** on interleaved random bits (the control —
+a perfect score there would prove the detector was cheating), and **4/4** under a
+24-bit contiguous burst.
+
+---
+
+## 3a. Where the interleaver detector actually gives up
+
+Reporting "it works" without a boundary is not a measurement. Sweeping 40
+payloads per cell at 192 information bits:
+
+| Channel flip rate | Correct | Declined | Wrong |
+|---|---|---|---|
+| 2% | **40/40** | 0/40 | 0/40 |
+| 5% | **40/40** | 0/40 | 0/40 |
+| 10% | **40/40** | 0/40 | 0/40 |
+| 15% | 39/40 | 0/40 | 1/40 |
+| 20% | 23/40 | 2/40 | **15/40** |
+| 30% | 7/40 | 9/40 | **24/40** |
+
+**The honest weakness:** past the boundary the detector mostly answers *wrong*
+rather than *declining*. The abstention margin catches near-ties only. The root
+cause is structural — Viterbi always returns the nearest codeword, so even a
+completely scrambled stream keeps a small residual (~0.14), and there is no clean
+"this is not a codeword" threshold to trip. A better heuristic would compare the
+*best* residual against the *spread* of the candidates rather than an absolute
+margin.
+
+**Two dead ends recorded so they are not repeated:**
+
+1. Classifying the interleaver from *statistics of the bit stream*
+   (displacement histograms, run-length fractions, entropy) against hand-written
+   constants. Scored **1/4 on structured data and 1/4 on pure noise** — it was
+   not measuring anything. Comparing an observation against a guess is not a
+   measurement. Also: if the payload is i.i.d. fair bits, the permutation is
+   **unrecoverable in principle**, so no detector can beat chance there.
+2. A **syndrome** computed by treating generator 0 as the systematic output.
+   `polys = (0b111, 0b101)` is **non-systematic**, so `bits[0::2]` is a parity,
+   not the input bit. It read **0.4639 on a clean codeword** where ~0 was
+   required. Caught by writing the instrument-sanity check *before* trusting any
+   score.
 
 ---
 

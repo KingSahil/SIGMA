@@ -292,8 +292,9 @@ is in `docs/STATUS_DONE_VS_LEFT.md` §1.
 | ii. Demodulation — **16QAM** | ✅ Done (**99.98%**); the GUI gate now lets it through |
 | ii. Demodulation — 8PSK | ✅ Done (**100.00%**) — was 51.70% (random); see below |
 | ii. Demodulation — FSK | ❌ **Not started** |
-| iii. De-interleaving (4 modes) | ❌ **Not started** |
-| iv. FEC (Viterbi / RS / LDPC) | ❌ **Not started** |
+| iii. De-interleaving (4 modes) | 🟡 Implemented + **detector blind-tested 4/4**; not yet in `src/` |
+| iv. FEC — convolutional | 🟡 **Done in scratch**: (2,1,3) encode + Viterbi **100.00%**, corrects **20/20** flips |
+| iv. FEC — Reed-Solomon / LDPC | ❌ **Not started** |
 | v. Bitstream correlation, header detection | ❌ **Not started** |
 
 **The 8PSK defect, and why it was invisible (measured 17–18 Sep).** 8PSK was a

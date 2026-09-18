@@ -35,7 +35,9 @@ signals where the answer is known by construction.
 | `scratch/verify_symbol_rate.py` | Symbol-rate accuracy vs known `R_s` |
 | `scratch/verify_demod.py` | Bit accuracy vs known transmitted bits |
 | `scratch/verify_wide.py` | 46-case sweep across modulation × rate × α × seed |
-| `scratch/run_all.py` | Runs all three. **This is the command you want.** |
+| `scratch/run_all.py` | Runs all **11**. **This is the command you want.** |
+| `scratch/fec_ground_truth.py` | `(2,1,3)` convolutional encode/decode + the four interleaver modes, with invertibility and burst proofs |
+| `scratch/verify_interleaver_detect.py` | Names the interleaver **blind** from the coded stream |
 | `scratch/verify_default_view.py` | Proves the GUI's *default* view completes the pipeline |
 | `scratch/verify_demod_panel.py` | Proves the DEMODULATION card shows real values, and the refusal shows a reason |
 | `scratch/measure_real_display.py` | Measures window/content fit on the **real** screen |
@@ -208,6 +210,52 @@ all yield `BPSK | measured`. Before the fix, the renamed file fell through to
 `Digital PSK/FSK / 78.4%` — a fabricated confidence produced by a substring
 match on the filename.
 
+### 2.6 Coding layer (PS §3 iii / iv)
+
+Two new scorable items. Both live in `scratch/` — they are **measured, not yet
+wired into `src/`**, and that distinction is deliberate.
+
+**Convolutional FEC.** A `(2,1,3)` code, `polys = (0b111, 0b101)`, terminated with
+`K-1` zero tail bits so the trellis returns to a known state.
+
+| Injected flips | Uncorrected | Decoded | Errors fixed |
+|---:|---:|---:|---:|
+| 1 | 99.88% | **100.00%** | 1/1 |
+| 5 | 99.38% | **100.00%** | 5/5 |
+| 10 | 98.75% | **100.00%** | 10/10 |
+| 20 | 97.50% | **100.00%** | 20/20 |
+| 40 | 95.00% | 99.75% | 39/40 |
+| 80 | 90.00% | 96.00% | 64/80 |
+
+Score **error counts, not accuracies**: at 1 flip the uncorrected stream is
+already 99.88% correct, so an accuracy delta of +0.12% reads as "no help" when in
+fact every error was removed.
+
+**Interleaver identification, blind.** The detector receives the interleaved
+coded stream and the code, but **not** the permutation. It de-interleaves under
+each candidate, then tests the result with
+
+```
+decode(bits) -> re-encode -> compare against bits
+```
+
+| Input | Residual |
+|---|---|
+| clean codeword | **0.0000** |
+| 3 channel errors | 0.0077 |
+| shuffled codeword | 0.1366 |
+| random bits | 0.1418 |
+
+The correct hypothesis scores exactly `0.0000`; every wrong one scores
+`0.046–0.148`. Results: **4/4** clean, **4/4** at every flip rate to **10%**,
+**0/4** on interleaved random bits (the control), **4/4** under a 24-bit
+contiguous burst. Reproduce: `scratch/verify_interleaver_detect.py`.
+
+The operating boundary and the detector's one real weakness (past the boundary it
+answers *wrong* rather than declining, because Viterbi always returns a nearest
+codeword so no clean "not a codeword" threshold exists) are tabulated in
+`STATUS_DONE_VS_LEFT.md` §3a.
+
 ---
 
 ## 3. Known limitations (unresolved, stated plainly)
@@ -363,7 +411,7 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed) -- runs all 9 suites
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 11 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
 
 # Individual DSP suites
@@ -375,6 +423,10 @@ Always verify with:
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_demod_gate.py           # 11/11 routing
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_gui_all_mods.py         # 4/4 through the GUI
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_wide.py                 # BPSK/QPSK legacy, 46/46
+
+# Coding layer (PS section 3 iii / iv)
+& "$env:USERPROFILE\radioconda\python.exe" scratch\fec_ground_truth.py            # encode/decode, 4 interleavers
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_interleaver_detect.py   # 4/4 blind, 0/4 on noise
 
 # GUI: default view completes the pipeline
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_default_view.py
@@ -391,9 +443,6 @@ Always verify with:
 # GUI: real window, 4 second smoke test
 & "$env:USERPROFILE\radioconda\python.exe" scratch\launch_smoke.py
 ```
-
-`scratch/` is development-only and not part of the shipped application, but
-keeping it is what makes the claims above checkable.
 
 `scratch/` is development-only and not part of the shipped application, but
 keeping it is what makes the claims above checkable.
