@@ -17,7 +17,9 @@ data/**/*_audible.wav
 .DS_Store
 Thumbs.db
 
-# Assistant workspace (agent memory, scratch state) -- not part of the product
+# Assistant workspace: local tool state and private scratch (never tracked).
+# NOTE: .agents/ and .workbuddy-ai/ were committed in earlier history; those
+# tracked copies were removed here, so this rule now actually takes effect.
 .workbuddy-ai/
 .agents/
 
