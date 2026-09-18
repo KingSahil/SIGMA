@@ -38,6 +38,8 @@ signals where the answer is known by construction.
 | `scratch/run_all.py` | Runs all **11**. **This is the command you want.** |
 | `scratch/fec_ground_truth.py` | `(2,1,3)` convolutional encode/decode + the four interleaver modes, with invertibility and burst proofs |
 | `scratch/verify_interleaver_detect.py` | Names the interleaver **blind** from the coded stream |
+| `scratch/verify_coding_module.py` | Scores the **shipped** `src/sigma_coding.py`, incl. the uncoded-refusal safety property |
+| `scratch/verify_coding_gui.py` | The coding layer through the real window, widget text read back |
 | `scratch/verify_default_view.py` | Proves the GUI's *default* view completes the pipeline |
 | `scratch/verify_demod_panel.py` | Proves the DEMODULATION card shows real values, and the refusal shows a reason |
 | `scratch/measure_real_display.py` | Measures window/content fit on the **real** screen |
@@ -212,8 +214,10 @@ match on the filename.
 
 ### 2.6 Coding layer (PS §3 iii / iv)
 
-Two new scorable items. Both live in `scratch/` — they are **measured, not yet
-wired into `src/`**, and that distinction is deliberate.
+Shipped in **`src/sigma_coding.py`** and wired into the analysis pass, so the
+demodulated bits run through interleaver detection and FEC decode automatically.
+The measurements below are scored against the **shipped module**, not a scratch
+copy — which matters, see below.
 
 **Convolutional FEC.** A `(2,1,3)` code, `polys = (0b111, 0b101)`, terminated with
 `K-1` zero tail bits so the trellis returns to a known state.
@@ -231,9 +235,16 @@ Score **error counts, not accuracies**: at 1 flip the uncorrected stream is
 already 99.88% correct, so an accuracy delta of +0.12% reads as "no help" when in
 fact every error was removed.
 
+**Uncoded input is refused.** The safety property that makes it safe to run on
+every capture: `analyse_coding_layer` on ordinary uncoded traffic reports
+`had_fec=False` with a residual of ~0.13 and leaves `decoded_bits` as `None`. A
+Viterbi decoder *would* return confident output for any input, so reporting it
+would invent a payload. Verified in check 3 of `verify_coding_module.py`.
+
 **Interleaver identification, blind.** The detector receives the interleaved
 coded stream and the code, but **not** the permutation. It de-interleaves under
-each candidate, then tests the result with
+each candidate — searching factorisations rather than guessing one — then tests
+the result with
 
 ```
 decode(bits) -> re-encode -> compare against bits
@@ -247,14 +258,14 @@ decode(bits) -> re-encode -> compare against bits
 | random bits | 0.1418 |
 
 The correct hypothesis scores exactly `0.0000`; every wrong one scores
-`0.046–0.148`. Results: **4/4** clean, **4/4** at every flip rate to **10%**,
-**0/4** on interleaved random bits (the control), **4/4** under a 24-bit
-contiguous burst. Reproduce: `scratch/verify_interleaver_detect.py`.
+`0.046–0.148`. Results: **4/4** blind with no geometry hint, **288/288** across
+3 lengths × 4 geometries on a clean channel, **0/4** on interleaved random bits
+(the control), and **100%** payload recovery end to end for all four modes.
 
-The operating boundary and the detector's one real weakness (past the boundary it
-answers *wrong* rather than declining, because Viterbi always returns a nearest
-codeword so no clean "not a codeword" threshold exists) are tabulated in
-`STATUS_DONE_VS_LEFT.md` §3a.
+The operating boundary, the cost of the geometry search, and the two bugs the
+`src/` port exposed are all in `STATUS_DONE_VS_LEFT.md` §3a–3b.
+
+Reproduce: `scratch/verify_coding_module.py`, `scratch/verify_coding_gui.py`.
 
 ---
 
@@ -411,7 +422,7 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed) -- runs all 11 suites
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 13 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
 
 # Individual DSP suites
@@ -427,6 +438,8 @@ Always verify with:
 # Coding layer (PS section 3 iii / iv)
 & "$env:USERPROFILE\radioconda\python.exe" scratch\fec_ground_truth.py            # encode/decode, 4 interleavers
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_interleaver_detect.py   # 4/4 blind, 0/4 on noise
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_coding_module.py        # shipped module, refusal check
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_coding_gui.py           # through the real window
 
 # GUI: default view completes the pipeline
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_default_view.py

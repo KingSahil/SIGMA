@@ -44,6 +44,13 @@ verify_interleaver_detect.py  NAMES the interleaver blind, using the
                               and reported. Also records two dead ends (a
                               hand-fitted statistic, and a syndrome that
                               wrongly assumed the code was systematic).
+verify_coding_module.py       scores the SHIPPED module (src/sigma_coding.py)
+                              rather than a scratch copy. Includes the safety
+                              property -- uncoded input must be REFUSED -- and
+                              the geometry-blind detection check that exposed
+                              a single-guess factorisation bug scoring 2/4.
+verify_coding_gui.py          the coding layer through the real window, with
+                              widget text read back rather than screenshotted.
 
 The last three need PyQt5 (they set QT_QPA_PLATFORM=offscreen themselves).
 """
@@ -64,6 +71,8 @@ SCRIPTS = [
     "verify_gui_all_mods.py",
     "fec_ground_truth.py",
     "verify_interleaver_detect.py",
+    "verify_coding_module.py",
+    "verify_coding_gui.py",
 ]
 
 

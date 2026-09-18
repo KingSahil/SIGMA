@@ -17,6 +17,7 @@ try:
     from .sigma_analyzer_core import SignalMetadata, load_and_convert_wav
     from .sigma_flowgraph import SigmaFlowgraph
     from .sigma_demod import format_bitstream_summary
+    from .sigma_coding import analyse_coding_layer
     from .sigma_sample_rate import (
         resolve_sample_rate_file, format_sample_rate, format_sample_rate_source,
     )
@@ -25,6 +26,7 @@ except ImportError:
     from sigma_analyzer_core import SignalMetadata, load_and_convert_wav
     from sigma_flowgraph import SigmaFlowgraph
     from sigma_demod import format_bitstream_summary
+    from sigma_coding import analyse_coding_layer
     from sigma_sample_rate import (
         resolve_sample_rate_file, format_sample_rate, format_sample_rate_source,
     )
@@ -1128,6 +1130,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         m = self.metadata
         sr = getattr(m, "symbol_rate_result", None)
         self.demod_result = None
+        self.coding_result = None
 
         # Reset to pending, then promote only on real success.
         self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=False)
@@ -1246,11 +1249,25 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
             self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=True)
             self._set_pipeline_step(self.lbl_bits, "5. BITS", done=True)
+
+            # PS section 3 (iii)/(iv): interleaver detection + FEC decode.
+            # Runs over the recovered bits. It is expected to find nothing on
+            # ordinary uncoded traffic -- it reports "no FEC detected" rather
+            # than inventing a payload, which is why it is safe to run always.
+            coding = None
+            try:
+                coding = analyse_coding_layer(res.bits)
+                self.coding_result = coding
+            except Exception as ce:
+                print(f"[SIGMA] Coding-layer analysis skipped: {ce}")
+                self.coding_result = None
+
             self.lbl_demod.setToolTip(
                 f"{res.modulation}, {res.n_symbols} symbols, "
                 f"EVM {res.evm_percent:.1f}%  --  chosen by {source}")
             self.lbl_bits.setToolTip(
-                f"{len(res.bits)} bits recovered, EVM {res.evm_percent:.1f}%")
+                f"{len(res.bits)} bits recovered, EVM {res.evm_percent:.1f}%"
+                + (f"; {coding.reason}" if coding else ""))
 
             # Populate the DEMODULATION card with the real measured output.
             self.lbl_demod_state.setText("LOCKED")
@@ -1259,12 +1276,20 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
                 f"{res.modulation}  \u00b7  RRC matched filter")
             resid_txt = (f"{res.residual_freq_hz:+,.1f} Hz"
                          if res.residual_freq_hz is not None else "--")
+            coding_txt = "--"
+            if coding is not None and coding.analysed:
+                if coding.had_fec:
+                    coding_txt = (f"FEC {coding.interleaver or 'none'}"
+                                  f" (residual {coding.residual:.3f})")
+                else:
+                    coding_txt = "not present"
             self.lbl_demod_stats.setText(
                 f"Symbols: {res.n_symbols}      Bits: {len(res.bits)}      "
                 f"EVM: {res.evm_percent:.1f}%\n"
                 f"Carrier offset: {res.carrier_offset_hz:+,.0f} Hz      "
                 f"Residual tracked: {resid_txt}      "
-                f"SPS used: {res.sps:.2f}"
+                f"SPS used: {res.sps:.2f}\n"
+                f"Coding: {coding_txt}"
             )
             self.lbl_demod_reason.setVisible(False)
             # 48 bits in spaced groups: long enough to be a real payload

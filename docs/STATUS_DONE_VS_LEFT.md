@@ -14,13 +14,12 @@ says what is actually missing. Nothing here is estimated.*
 | **Partially done** | **4** — §3 i, §3 ii, §3 iii, §3 iv |
 | **Not started** | **1** — §3 v |
 | Working DSP engine | ✅ yes, verified — **4 of 5** constellation families |
-| Working coding layer | 🟡 decode + interleaver **detection** work and are measured; **not wired into `src/`** |
+| Working coding layer | ✅ **shipped in `src/` and wired into the GUI** — detection + convolutional FEC |
 | Working ML classifier | 🟡 heuristic **done** (144/144); CNN **not built** |
 
 **Headline:** the *analysis + demodulation* engine is real and verified, covering
-**four** constellations, and the *coding layer* now exists and is measured —
-which is the first movement on §3 iii/iv. What remains unwritten is the *CNN*
-and §3 v.
+**four** constellations, and the *coding layer* (§3 iii/iv) now ships in `src/`
+and runs in the GUI. What remains unwritten is the *CNN*, FSK, and §3 v.
 
 **On the count going from "fully done 1" to "fully done 0"** — this is a
 **recount, not a regression**. §3 i was previously scored as fully done on the
@@ -63,14 +62,14 @@ no section is complete. Every individual item that has moved so far moved **up**
 | i. **Sampling-frequency estimation** | ⚠️ **Resolved, not measured** | Provably impossible from samples alone. Resolved from ranked sources with `MEASURED`/`INFERRED`/`ASSUMED` labels. **25/25 verified** |
 | i. **Modulation classification** | 🟡 **Heuristic done, CNN not built** | Measurement-driven classifier works and is filename-independent. CNN dataset + baseline measured (97.7% on synthetic) but **no network exists** |
 | i. **FEC scheme identification** | 🟡 **Partially — code structure, not scheme** | The FEC **code** is known to the receiver in this harness (a (2,1,3) convolutional code). *Identifying an unknown* code from the stream is **not done** |
-| i. **Interleaving type detection** | ✅ **Done, measured** | **4/4 blind**, correct to 10% channel errors, abstains/errs past ~15%. See §3a |
+| i. **Interleaving type detection** | ✅ **Done, shipped** | **4/4 blind**, no geometry hint; **288/288** across lengths/geometries. See §3a |
 | i. **Other features** (SNR, power, BW, constellation) | ✅ **Done** | RMS, peak, dBFS, 99% OBW, noise floor, SNR, peak freq, constellation |
 | ii. **Demod — BPSK / QPSK** | ✅ **Done** | **100.00%** over the full sweep, using the *detected* symbol rate |
 | ii. **Demod — QAM (16QAM)** | ✅ **Done** | **99.98%** (min 99.97%) — the gate now lets it through |
 | ii. **Demod — PSK (8PSK)** | ✅ **Done** | **100.00%** over the full sweep. Was 51.70% (chance); the carrier exponent was hardcoded to `x**4` and is now `x**8` |
 | ii. **Demod — FSK** | ❌ **Not started** | — |
-| iii. **De-interleaving (4 modes)** | 🟡 **Generators + generator blind-tested** | All 4 modes proven invertible. The **detector** names the mode blind: **4/4 clean, 4/4 to 10% channel errors, 0/4 on random bits**. Boundary measured (see §3a). Not yet wired into `src/` |
-| iv. **FEC (Viterbi / RS / LDPC)** | 🟡 **Convolutional done** | (2,1,3) encode + Viterbi **100.00%** noiseless; corrects **20/20** injected flips. Reed-Solomon / LDPC **not started** |
+| iii. **De-interleaving (4 modes)** | ✅ **Done — shipped and wired** | All 4 modes proven invertible. Detector names the mode **blind: 4/4**, no geometry hint, 288/288 across lengths/geometries. **0/4 on random bits** (control). Runs in the GUI |
+| iv. **FEC (Viterbi / RS / LDPC)** | 🟡 **Convolutional done**, RS/LDPC not | (2,1,3) encode + Viterbi **100.00%**; corrects **20/20** injected flips; refuses uncoded input. `src/sigma_coding.py` |
 | v. **Bitstream correlation, header detection** | ❌ **Not started** | — |
 
 ---
@@ -151,19 +150,39 @@ completely scrambled stream keeps a small residual (~0.14), and there is no clea
 *best* residual against the *spread* of the candidates rather than an absolute
 margin.
 
-**Two dead ends recorded so they are not repeated:**
+**Cost of the geometry search.** Those figures were measured with the block
+geometry supplied. Blind (no `rows`/`cols`, which is the realistic case) the
+detector is still perfect to 5%, but at 10% it falls to **29/40** — searching
+many factorisations gives a wrong hypothesis more chances to score well.
+Blind, however, it is **288/288** across 3 lengths × 4 geometries on a clean
+channel, so the search is clearly worth its cost.
 
-1. Classifying the interleaver from *statistics of the bit stream*
-   (displacement histograms, run-length fractions, entropy) against hand-written
-   constants. Scored **1/4 on structured data and 1/4 on pure noise** — it was
-   not measuring anything. Comparing an observation against a guess is not a
-   measurement. Also: if the payload is i.i.d. fair bits, the permutation is
-   **unrecoverable in principle**, so no detector can beat chance there.
-2. A **syndrome** computed by treating generator 0 as the systematic output.
-   `polys = (0b111, 0b101)` is **non-systematic**, so `bits[0::2]` is a parity,
-   not the input bit. It read **0.4639 on a clean codeword** where ~0 was
-   required. Caught by writing the instrument-sanity check *before* trusting any
-   score.
+## 3b. Two bugs the `src/` port exposed (both found only by scoring the shipped copy)
+
+The coding layer was developed in `scratch/` and then moved into
+`src/sigma_coding.py`. **Scoring the shipped copy against the same ground truth
+immediately found two defects the scratch version did not have** — which is the
+argument for never assuming a port is faithful:
+
+1. **Reversed window bit order → 54.25% noiseless.** The port rebuilt the
+   K-bit window with a linear-feedback shift instead of
+   `(bit << state_bits) | state`. That reverses the bit order relative to the
+   encoder while remaining a *perfectly self-consistent trellis* — so it ran
+   without error and produced garbage. Measured: `54.25%` on a noiseless
+   channel, and a re-encode residual of `0.32` instead of `0.0000`. This is the
+   same failure class as the original traceback bug: nothing crashes, the number
+   just stops meaning anything.
+2. **Single-guess factorisation → 2/4 detection.** `detect_interleaver` guessed
+   one `rows`/`cols` pair (the largest factor ≤ √n) when not given them. A
+   stream generated at 49×8 was auto-factorised to 28×14 — a *different
+   interleaver* — so `block` was reported as `convolutional` and `diagonal`
+   declined. **This scored 4/4 when tested in isolation with the true geometry
+   passed in, and 2/4 through its real caller.** Fixed by enumerating
+   factorisations and taking the best.
+
+**The generalisable lesson:** test a function *through its real caller*. Both
+bugs were invisible to the function's own unit test, because the unit test
+supplied exactly the information the real caller does not have.
 
 ---
 

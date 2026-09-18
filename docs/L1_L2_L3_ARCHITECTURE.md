@@ -292,8 +292,8 @@ is in `docs/STATUS_DONE_VS_LEFT.md` §1.
 | ii. Demodulation — **16QAM** | ✅ Done (**99.98%**); the GUI gate now lets it through |
 | ii. Demodulation — 8PSK | ✅ Done (**100.00%**) — was 51.70% (random); see below |
 | ii. Demodulation — FSK | ❌ **Not started** |
-| iii. De-interleaving (4 modes) | 🟡 Implemented + **detector blind-tested 4/4**; not yet in `src/` |
-| iv. FEC — convolutional | 🟡 **Done in scratch**: (2,1,3) encode + Viterbi **100.00%**, corrects **20/20** flips |
+| iii. De-interleaving (4 modes) | ✅ **Done and shipped** — detector **4/4 blind** in `src/sigma_coding.py` |
+| iv. FEC — convolutional | ✅ **Done and shipped** — (2,1,3) encode + Viterbi, **100.00%**, corrects **20/20** flips |
 | iv. FEC — Reed-Solomon / LDPC | ❌ **Not started** |
 | v. Bitstream correlation, header detection | ❌ **Not started** |
 
