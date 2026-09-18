@@ -35,13 +35,15 @@ signals where the answer is known by construction.
 | `scratch/verify_symbol_rate.py` | Symbol-rate accuracy vs known `R_s` |
 | `scratch/verify_demod.py` | Bit accuracy vs known transmitted bits |
 | `scratch/verify_wide.py` | 46-case sweep across modulation × rate × α × seed |
-| `scratch/run_all.py` | Runs all **15**. **This is the command you want.** |
+| `scratch/run_all.py` | Runs all **17**. **This is the command you want.** |
 | `scratch/fec_ground_truth.py` | `(2,1,3)` convolutional encode/decode + the four interleaver modes, with invertibility and burst proofs |
 | `scratch/verify_interleaver_detect.py` | Names the interleaver **blind** from the coded stream |
 | `scratch/verify_coding_module.py` | Scores the **shipped** `src/sigma_coding.py`, incl. the uncoded-refusal safety property |
 | `scratch/verify_coding_gui.py` | The coding layer through the real window, widget text read back |
 | `scratch/header_ground_truth.py` | Sync-word search + the chance-threshold table for PS §3 v |
 | `scratch/verify_provenance_label.py` | The modulation card reports a **source**, not a confidence — all four provenance strings read back from the widget |
+| `scratch/fec_scheme_search.py` | PS §3 i ground truth: five codes recovered, the margin over the runner-up, and the control showing a bare argmin claims a scheme for 12/12 noise streams |
+| `scratch/verify_scheme_search.py` | The same against the **shipped** module + GUI, the fast path's blind spot (0/16), and the deep search that closes it (16/16 for K ≤ 7) |
 | `scratch/verify_default_view.py` | Proves the GUI's *default* view completes the pipeline |
 | `scratch/verify_demod_panel.py` | Proves the DEMODULATION card shows real values, and the refusal shows a reason |
 | `scratch/measure_real_display.py` | Measures window/content fit on the **real** screen |
@@ -339,6 +341,46 @@ cannot disagree.
 
 Reproduce: `scratch/verify_provenance_label.py`.
 
+### 2.9 Blind FEC-scheme identification (PS §3 i)
+
+The coding layer used to take `K` and `polys` as inputs. It now **identifies the
+code from the stream**, because a real receiver is not told which one was used
+and the code is not carried in the signal.
+
+**The control is the important part.** A search over candidate codes always
+returns a winner, so an unthresholded one fabricates:
+
+| rule | random streams given a scheme |
+|---|---|
+| bare argmin | **12/12** |
+| residual `≤ FEC_THRESHOLD` (0.03) | **0/12** |
+
+Results against the shipped module:
+
+| Test | Result |
+|---|---|
+| Each of 5 codes named from its own encoding | **5/5** |
+| True code residual vs runner-up | 0.0000 vs ~0.12 (**margin 0.12+**) |
+| Random streams given a scheme | **0/12** |
+| Fast path: non-default code + interleaver | **0/16** (the measured blind spot) |
+| Deep search: same cases, K ≤ 7 | **16/16** |
+| Deep search on random bits | **0/4** |
+| K=9 on a short stream | reported `'skipped: stream too short'`, not rejected |
+
+Two properties are checked because they are easy to get wrong:
+
+* **A skipped candidate is not a rejected one.** K=9 is gated by stream length
+  (`MIN_BITS_FOR_K9`); when it is not tested the table says so explicitly, since
+  "not tested" and "tested and rejected" are different claims.
+* **The reason string must not contradict the result.** An early version
+  searched for the code on the *raw* bits and then de-interleaved, so an
+  interleaved codeword reported *"the code search fell short"* while
+  simultaneously decoding the payload at 100%. The search now runs on the
+  stream that is actually decoded.
+
+Reproduce: `scratch/fec_scheme_search.py` (ground truth),
+`scratch/verify_scheme_search.py` (shipped module + GUI, ~2 min).
+
 ---
 
 ## 3. Known limitations (unresolved, stated plainly)
@@ -494,7 +536,7 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed) -- runs all 15 suites
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 17 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
 
 # Individual DSP suites
@@ -514,6 +556,10 @@ Always verify with:
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_coding_gui.py           # through the real window
 & "$env:USERPROFILE\radioconda\python.exe" scratch\header_ground_truth.py         # sync search + chance table
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_provenance_label.py     # card says Source, not Confidence
+
+# FEC scheme identification (PS section 3 i)
+& "$env:USERPROFILE\radioconda\python.exe" scratch\fec_scheme_search.py           # 5 codes, margin, 0/12 control
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_scheme_search.py        # shipped module + GUI (~2 min)
 
 # GUI: default view completes the pipeline
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_default_view.py

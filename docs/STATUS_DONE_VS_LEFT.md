@@ -14,20 +14,24 @@ says what is actually missing. Nothing here is estimated.*
 | **Partially done** | **4** — §3 i, §3 ii, §3 iv, §3 v |
 | **Not started** | **0** |
 | Working DSP engine | ✅ yes, verified — **4 of 5** constellation families |
-| Working coding layer | ✅ **shipped in `src/` and wired into the GUI** — detection, FEC, header search |
+| Working coding layer | ✅ **shipped in `src/` and wired into the GUI** — scheme ID, detection, FEC, header search |
 | Working ML classifier | 🟡 heuristic **done** (144/144); CNN **not built** |
 
 **Headline:** every one of the five problem-statement sections now has shipped,
 measured code. The *analysis + demodulation* engine covers **four** constellations;
-the *coding layer* (§3 iii/iv/v) runs in the GUI. What remains unwritten is the
+the *coding layer* (§3 i/iii/iv/v) runs in the GUI. What remains unwritten is the
 *CNN*, FSK demodulation, and Reed-Solomon/LDPC.
 
-**On the count going from "fully done 0" to "fully done 1"** — §3 iii is the
-first section to close, because all four interleaver families are implemented,
-proven invertible, and **identified blind** from the coded stream. The other four
-are partial for specific, named reasons rather than in general: §3 i still lacks
-blind FEC-scheme *identification*; §3 ii lacks FSK; §3 iv lacks RS/LDPC; §3 v
-detects a *known* sync word but does not discover an unknown one.
+**On the count staying at "fully done 1"** — §3 i gained its last missing
+capability this round (the FEC code is now **identified from the stream** rather
+than assumed: 5 codes recovered, 0/12 false identifications on noise), but the
+section also asks for a **CNN classifier**, which still does not exist. So it
+remains partial for a *different* reason than before, and the reason is stated
+rather than the count being fudged upward.
+
+The remaining partials are all specific and named: §3 i lacks the CNN; §3 ii
+lacks FSK; §3 iv lacks RS/LDPC; §3 v detects a *known* sync word but does not
+discover an unknown one.
 
 **On the count going from "fully done 1" to "fully done 0"** — this is a
 **recount, not a regression**. §3 i was previously scored as fully done on the
@@ -69,7 +73,7 @@ no section is complete. Every individual item that has moved so far moved **up**
 |---|---|---|
 | i. **Sampling-frequency estimation** | ⚠️ **Resolved, not measured** | Provably impossible from samples alone. Resolved from ranked sources with `MEASURED`/`INFERRED`/`ASSUMED` labels. **25/25 verified** |
 | i. **Modulation classification** | 🟡 **Heuristic done, CNN not built** | Measurement-driven classifier works and is filename-independent. CNN dataset + baseline measured (97.7% on synthetic) but **no network exists** |
-| i. **FEC scheme identification** | 🟡 **Partially — code structure, not scheme** | The FEC **code** is known to the receiver in this harness (a (2,1,3) convolutional code). *Identifying an unknown* code from the stream is **not done** |
+| i. **FEC scheme identification** | ✅ **Done — shipped** | The code is now **identified from the stream**, not assumed. 5 standard rate-1/2 codes recovered from their own encodings, with a **0.12 residual margin** over the runner-up; **0/12 false identifications** on random bits where a bare argmin claims **12/12**. Deep search resolves non-default code + interleaver (**16/16** for K ≤ 7). See §3d |
 | i. **Interleaving type detection** | ✅ **Done, shipped** | **4/4 blind**, no geometry hint; **288/288** across lengths/geometries. See §3a |
 | i. **Other features** (SNR, power, BW, constellation) | ✅ **Done** | RMS, peak, dBFS, 99% OBW, noise floor, SNR, peak freq, constellation |
 | ii. **Demod — BPSK / QPSK** | ✅ **Done** | **100.00%** over the full sweep, using the *detected* symbol rate |
@@ -234,6 +238,74 @@ distinguishable from chance?) rather than from a comparison of scores. The
 symptom was that it failed *uniformly*, which is the same fingerprint as the
 Viterbi traceback bug: a detector that never succeeds is as broken as one that
 always does.
+
+---
+
+## 3d. Identifying the code itself, and the line that had to be drawn
+
+§3 i asks for "identification of modulation, encoding, interleaving and other
+features". The coding layer previously took `K` and `polys` as **inputs** — the
+harness knew the operator's code. A real receiver does not, and the code is not
+carried in the signal. So the code is now **searched**, not assumed.
+
+### The trap: a search always returns a winner
+
+Score every candidate code on any input and one of them always fits best. Taken
+naively, that names a code for pure noise. Measured on 12 random 200-bit
+streams:
+
+| rule | streams given a scheme |
+|---|---|
+| bare argmin (no threshold) | **12/12** |
+| residual `≤ 0.03` (`FEC_THRESHOLD`) | **0/12** |
+
+Every one of those 12 answers would have been a fabrication. This is the same
+class of failure as running Viterbi on uncoded bits, and it is why the search
+carries a threshold and reports a refusal rather than a winner.
+
+### What it recovers
+
+Five standard rate-1/2 convolutional codes: `(2,1,3)` (the default),
+`(2,1,4)`, `(2,1,5)`, `(2,1,7)` (the classic "91,121"), `(2,1,9)`.
+Each is named from its own encoding, with the true code at residual
+**0.0000** and the runner-up at **~0.12** — a margin of two orders of
+magnitude, not a close call.
+
+> **Notation note:** generators are conventionally written in **octal**, and
+> the K=7 code cited as "91,121" *is* octal (`0o133 = 91`, `0o171 = 121`).
+> Writing the pair as decimal silently defines a different code, and `0o91` is a
+> syntax error. The first draft of the harness had this wrong.
+
+### The blind spot, measured rather than asserted
+
+Interleaver detection works by asking *"does de-interleaving make this a valid
+codeword?"* — so it is probed **with a code**. If the probe code is wrong, the
+answer is always no:
+
+| case | fast path | deep search |
+|---|---|---|
+| default code + interleaver | 16/16 | — |
+| **non-default code + interleaver** | **0/16** | **16/16** (K ≤ 7) |
+
+The fast path (probe with the default code) runs on every load and costs ~0.1 s.
+It cannot resolve a stream that is both coded with a non-default code **and**
+interleaved. The deep search probes with each candidate code and closes that
+gap, at **~1.4 s per stream** — which is why it is an explicit action in the GUI
+("Deep code search") and not the default.
+
+### The cost, and the honest limit
+
+One `detect_interleaver` call, 200-bit stream: K=3 **0.10 s**, K=4 **0.18 s**,
+K=5 **0.33 s**, K=7 **1.39 s**, K=9 **11.13 s**. K=9 is therefore excluded from
+the deep probe set and gated by stream length (`MIN_BITS_FOR_K9 = 512`). When it
+is skipped the result says so — the table carries
+`'skipped: stream too short'`, because **"not tested" and "tested and rejected"
+are different claims** and must not look alike in the output.
+
+**Still not done in this section:** an *unknown* sync word is not discovered
+(§3 v searches a known one), Reed-Solomon/LDPC are absent (§3 iv), and the CNN
+does not exist (§3 i). The scheme search also assumes a **rate-1/2** code; a
+different rate is not in the candidate set.
 
 ---
 

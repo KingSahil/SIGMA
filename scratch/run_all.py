@@ -67,6 +67,22 @@ verify_provenance_label.py    the modulation card must report a SOURCE, not a
                               confidence figure (EVM) is still shown in the
                               demod card.
 
+Added for PS section 3 (i), blind FEC-scheme identification:
+fec_scheme_search.py          the ground-truth experiment. Recovers five
+                              standard rate-1/2 codes from their own encodings,
+                              establishes the margin over the runner-up, and
+                              -- crucially -- measures that a BARE argmin claims
+                              a scheme for 12/12 random streams while the
+                              thresholded search claims 0/12.
+verify_scheme_search.py       the same properties against the SHIPPED module and
+                              the GUI, plus the fast path's blind spot
+                              (non-default code + interleaver = 0/16) and the
+                              deep search that closes it (16/16 for K<=7).
+
+NOTE: verify_scheme_search.py section 4 runs a joint code x interleaver search
+and takes ~80 s on its own. That is deliberate -- it is the measurement that
+justifies the deep search existing.
+
 The last three need PyQt5 (they set QT_QPA_PLATFORM=offscreen themselves).
 """
 import os
@@ -90,6 +106,8 @@ SCRIPTS = [
     "verify_coding_module.py",
     "verify_coding_gui.py",
     "verify_provenance_label.py",
+    "fec_scheme_search.py",
+    "verify_scheme_search.py",
 ]
 
 

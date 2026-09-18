@@ -47,6 +47,56 @@ DEFAULT_POLYS = (0b111, 0b101)
 #: The four interleaver families named in PS section 3 (iii).
 INTERLEAVE_MODES = ("block", "convolutional", "diagonal", "pseudo_random")
 
+#: Candidate rate-1/2 convolutional codes for BLIND scheme identification
+#: (PS section 3 i). A real receiver does not know which code the operator
+#: used, and (K, polys) is not carried in the signal, so it must be searched.
+#:
+#: Generators are conventionally written in OCTAL. The widely cited K=7 code
+#: "91,121" IS octal -- 0o133 = 91 decimal, 0o171 = 121 decimal. Writing the
+#: pair as decimal silently defines a different code, and 0o91 is a syntax
+#: error (9 is not an octal digit). Order is (g1, g2), matching conv_encode.
+#:
+#: Measured (scratch/fec_scheme_search.py): every code below is recovered from
+#: its own encoding with the true residual at 0.0000 and the runner-up at
+#: ~0.12 -- a margin of two orders of magnitude. Random bits score >= 0.12,
+#: i.e. above FEC_THRESHOLD, so they are refused rather than mis-identified.
+CANDIDATE_CODES = (
+    ("(2,1,3)",   3, (0o7, 0o5)),        # NASA/CCSDS rate-1/2 K=3 (default)
+    ("(2,1,4)",   4, (0o15, 0o17)),
+    ("(2,1,5)",   5, (0o23, 0o35)),
+    ("(2,1,7)",   7, (0o171, 0o133)),    # the classic "91,121" code
+    ("(2,1,9)",   9, (0o561, 0o753)),    # deep-space rate-1/2
+)
+
+#: A stream must be long enough to make a given K worth testing: the tail
+#: alone costs K-1 bits, and a large K gains too much freedom on a short
+#: stream. Below this, the candidate is skipped rather than scored.
+MIN_BITS_PER_K = 8
+
+#: Probes used for the joint code x interleaver DEEP search. K=9 is excluded:
+#: measured at 11.1 s for a single 200-bit stream (K=7 is 1.4 s, K=3 is 0.1 s),
+#: which would make a deep search unusable. A K=9 signal is still identified by
+#: the fast path when it is NOT interleaved; see MIN_BITS_FOR_K9.
+PROBE_CODES = (
+    ("(2,1,3)", 3, (0o7, 0o5)),
+    ("(2,1,4)", 4, (0o15, 0o17)),
+    ("(2,1,5)", 5, (0o23, 0o35)),
+    ("(2,1,7)", 7, (0o171, 0o133)),
+)
+
+#: K=9 is only attempted on streams at least this long. The cost is dominated
+#: by the 2^(K-1)=256-state trellis, so a short stream gains nothing from it
+#: while still paying the full price.
+MIN_BITS_FOR_K9 = 512
+
+#: Re-encode residual below which a stream counts as a valid codeword.
+#: A genuine (or lightly-corrupted) codeword reproduces itself at ~0.000;
+#: random bits and scrambled codewords score >= 0.12. Everything between is
+#: neither, and the module refuses rather than guessing -- Viterbi returns the
+#: *nearest* codeword for any input, so a decoder given uncoded bits would
+#: otherwise invent a payload.
+FEC_THRESHOLD = 0.03
+
 
 # ---------------------------------------------------------------------------
 # Convolutional encoding
@@ -347,9 +397,141 @@ def reencode_residual(bits, K=DEFAULT_K, polys=DEFAULT_POLYS):
     return float(np.mean(re[:m] != bits[:m]))
 
 
+def search_fec_scheme(bits, candidates=CANDIDATE_CODES,
+                      min_bits_per_k=MIN_BITS_PER_K,
+                      threshold=None):
+    """Identify which convolutional code a bit stream is, or refuse.
+
+    PS section 3 (i). ``analyse_coding_layer`` takes ``K`` and ``polys`` as
+    inputs; a real receiver has neither, and the code is not carried in the
+    signal. This searches a set of standard rate-1/2 codes and reports which,
+    if any, the stream is a codeword of.
+
+    Returns
+    -------
+    (label, K, polys, residual, table) on success, or ``(None, None, None,
+    None, table)`` when no candidate clears the threshold. ``table`` is a list
+    of ``(label, K, polys, residual_or_None)`` for every candidate, so a caller
+    can show the whole ranking.
+
+    Why a threshold and not just ``argmin``
+    ---------------------------------------
+    A bare argmin **always** names a code. Measured on 12 random 200-bit
+    streams, a threshold-free search claimed a scheme for **12/12** of them --
+    every answer a fabrication. The threshold is what makes the answer mean
+    something, and the refusal is the honest output for uncoded traffic.
+
+    The default threshold is ``FEC_THRESHOLD``, the same one the rest of the
+    module uses; random bits score >= 0.12 against it, while a true codeword
+    scores 0.0000 and its runner-up ~0.12.
+    """
+    bits = np.asarray(bits, dtype=np.uint8).ravel()
+    n = len(bits)
+    if threshold is None:
+        threshold = FEC_THRESHOLD
+
+    table = []
+    for label, K, polys in candidates:
+        if n < min_bits_per_k * K:
+            table.append((label, K, polys, None))
+            continue
+        table.append((label, K, polys, reencode_residual(bits, K=K,
+                                                         polys=polys)))
+
+    usable = [r for r in table if r[3] is not None]
+    if not usable:
+        return None, None, None, None, table
+
+    best = min(usable, key=lambda r: r[3])
+    if best[3] > threshold:
+        # Nothing fits. The best score is still reported through `table` so the
+        # caller can say HOW far off it was, rather than just "no".
+        return None, None, None, best[3], table
+    return best[0], best[1], tuple(best[2]), best[3], table
+
+
+def scheme_margin(table):
+    """Gap between the best and the runner-up residual, or None.
+
+    Small margins are how a wrong identification announces itself: past the
+    noise boundary the search does not cleanly refuse, it picks a different
+    code whose residual is only slightly worse. Measured margins fall from
+    0.0835 at 5% channel errors to 0.0043 at 25%, while genuine identification
+    has a margin of ~0.12.
+    """
+    scored = sorted([r for r in table if r[3] is not None],
+                    key=lambda r: r[3])
+    if len(scored) < 2:
+        return None
+    return float(scored[1][3] - scored[0][3])
+
+
+def search_scheme_and_interleaver(bits, probe_codes=PROBE_CODES,
+                                  min_bits_for_k9=MIN_BITS_FOR_K9,
+                                  threshold=None):
+    """Jointly identify the code AND the interleaver, or refuse. SLOW.
+
+    Why a joint search is needed
+    ----------------------------
+    Interleaver detection is probed *with a code*: it asks "does de-interleaving
+    make this a valid codeword?" So a stream that is both coded and interleaved
+    can only be resolved if the right code is used as the probe. Measured with
+    the default (2,1,3) probe alone, an interleaved (2,1,4)/(2,1,5)/(2,1,7)
+    stream was identified **0/12** times -- the detector simply saw nothing.
+    Probing with each candidate code raises that to **16/16** for K <= 7.
+
+    Cost, measured on 200-bit streams
+    ---------------------------------
+    One `detect_interleaver` call: K=3 0.10 s, K=4 0.18 s, K=5 0.33 s,
+    K=7 1.39 s, **K=9 11.13 s**. A full joint search over K <= 7 is therefore
+    ~1.4 s per stream in the worst case, which is why this is a SEPARATE
+    function called on demand rather than the default path.
+
+    Returns
+    -------
+    (scheme_label, interleaver, residual, (K, polys), geometry, table) where
+    any of the first five may be None. ``table`` lists
+    ``(label, K, interleaver, residual_or_None)`` for every probe, so a caller
+    can show what was considered.
+    """
+    bits = np.asarray(bits, dtype=np.uint8).ravel()
+    if threshold is None:
+        threshold = FEC_THRESHOLD
+
+    probes = list(probe_codes)
+    best = None
+    table = []
+
+    # K=9 is probed only on long streams. When it is skipped, record that in the
+    # table so a caller reports "not tested" rather than letting it look like
+    # "tested and rejected" -- those are different claims.
+    if len(bits) < min_bits_for_k9:
+        for label, K, polys in CANDIDATE_CODES:
+            if K == 9 and not any(p[0] == label for p in probes):
+                table.append((label, K, None, "skipped: stream too short"))
+    for label, K, polys in probes:
+        if len(bits) < MIN_BITS_PER_K * K:
+            table.append((label, K, None, None))
+            continue
+        il, scores, geom = detect_interleaver(bits, K=K, polys=polys,
+                                             return_geometry=True)
+        resid = scores.get(il) if il else reencode_residual(bits, K=K,
+                                                            polys=polys)
+        table.append((label, K, il, resid))
+        if resid is None:
+            continue
+        if best is None or resid < best[2]:
+            best = (label, il, resid, (K, polys), geom)
+
+    if best is None or best[2] > threshold:
+        return None, None, (best[2] if best else None), None, None, table
+
+    label, il, resid, kp, geom = best
+    return label, il, resid, kp, geom, table
+
+
 def _factorisations(n, max_candidates=8):
     """Plausible ``(rows, cols)`` pairs for a block interleaver of length `n`.
-
     A real receiver does **not** know the block geometry, so guessing a single
     factorisation is not sufficient. Measured failure of that approach: a
     stream generated with rows=49, cols=8 was auto-factorised to rows=28,
@@ -566,6 +748,15 @@ class CodingResult:
         # PS section 3 (v): sync-word / frame-boundary search.
         self.sync_hits = []              # [(offset, errors)] best first
         self.sync_detectable = None      # None = not decidable at this length
+        # PS section 3 (i): blind identification of the code itself.
+        self.fec_scheme = None           # e.g. "(2,1,3)", or None if refused
+        self.fec_scheme_table = []       # [(label, K, polys, residual|None)]
+        self.fec_scheme_margin = None    # best minus runner-up residual
+        self.fec_scheme_source = "searched"   # "searched" | "given" | "n/a"
+        self.fec_scheme_residual = None  # best candidate's residual
+        self.deep_search = False         # was the joint search used?
+        self.scheme_table = []           # joint-search table, when deep
+        self.k9_skipped = False          # K=9 not tested (stream too short)
 
     def __repr__(self):
         if not self.analysed:
@@ -581,15 +772,21 @@ class CodingResult:
                 f"<CodingResult {self.interleaver or 'unknown'}>")
 
 
-def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
+def analyse_coding_layer(bits, K=None, polys=None,
                          try_interleavers=True, min_bits=32,
-                         sync=DEFAULT_SYNC, try_headers=True):
-    """Run interleaver detection, FEC decode and header search over bit stream.
+                         sync=DEFAULT_SYNC, try_headers=True,
+                         search_scheme=True, deep_search=False):
+    """Run FEC scheme identification, interleaver detection, decode and headers.
 
     Parameters
     ----------
     bits : array_like
         The hard-decision bits from ``DemodResult.bits``.
+    K, polys : int, tuple or None
+        The convolutional code. **Both default to None, meaning "identify the
+        code from the stream"** (PS section 3 i) rather than assume one. Pass
+        them explicitly only when the operator is already known -- doing so
+        skips the search and records the provenance as ``"given"``.
     try_interleavers : bool
         When False, skip detection and evaluate the stream assuming it was not
         interleaved. Useful for a fast path.
@@ -598,6 +795,18 @@ def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
         CCSDS-shaped marker.
     try_headers : bool
         When False, skip the header search.
+    search_scheme : bool
+        When False, fall back to the historical behaviour of assuming the
+        default (2,1,3) code. Kept so the search can be disabled when the code
+        is known to fit the default and speed matters.
+    deep_search : bool
+        When True, run the JOINT code x interleaver search
+        (:func:`search_scheme_and_interleaver`) instead of probing the
+        interleaver with the default code. This is what identifies a stream
+        that is both coded (with a non-default code) AND interleaved: measured
+        **16/16** for K <= 7, versus **0/12** on the fast path. It costs
+        roughly 1.4 s per stream, so it is opt-in and never on the default
+        path. See the note on the fast path's blind spot below.
 
     Returns
     -------
@@ -605,9 +814,9 @@ def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
 
     Honest behaviour on ordinary (uncoded, unframed) traffic: the residual will
     be high (~0.13+), ``had_fec`` stays False, ``decoded_bits`` is left as None,
-    and ``sync_hits`` is empty. Viterbi over uncoded bits *would* return
-    something, and reporting it would be the bug -- so this function refuses
-    instead.
+    ``sync_hits`` is empty, and ``fec_scheme`` is None. Viterbi over uncoded
+    bits *would* return something, and reporting it would be the bug -- so this
+    function refuses instead.
     """
     res = CodingResult()
     bits = np.asarray(bits, dtype=np.uint8).ravel()
@@ -624,43 +833,132 @@ def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
         if res.sync_detectable is not None:
             res.sync_hits = find_headers(bits, sync)
 
-    # 1. Is this a valid codeword as-is?
-    direct = reencode_residual(bits, K=K, polys=polys)
+    # 0b. Note how the code will be determined, but do not search yet.
+    #
+    #     Ordering matters and is easy to get wrong. The scheme search must run
+    #     on the stream that will actually be DECODED -- i.e. AFTER any
+    #     de-interleaving -- because de-interleaving scrambles bit order beyond
+    #     recognition for a convolutional code. Searching the raw bits when the
+    #     stream is interleaved finds nothing and then reports "the code search
+    #     fell short" while simultaneously decoding the payload perfectly, which
+    #     is a self-contradicting reason string. The search therefore happens
+    #     below, on `target`.
+    if K is not None and polys is not None:
+        res.fec_scheme_source = "given"
+        res.fec_scheme = f"(2,1,{K})" if len(polys) == 2 else f"(K={K})"
+    elif search_scheme:
+        res.fec_scheme_source = "searched"
+    else:
+        res.fec_scheme_source = "n/a"
+        K, polys = DEFAULT_K, DEFAULT_POLYS
+
+    # 1. Is this a valid codeword as-is, under the default code? This first
+    #    pass only decides whether an interleaver is involved; when the code is
+    #    being searched, the authoritative residual is recomputed below.
+    K_probe, polys_probe = ((DEFAULT_K, DEFAULT_POLYS)
+                            if res.fec_scheme_source == "searched"
+                            else (K, polys))
+    direct = reencode_residual(bits, K=K_probe, polys=polys_probe)
 
     # 2. If not, does any interleaver make it one?
+    #
+    #    FAST PATH: probe with the default code only. This is O(one code) and
+    #    runs on every analysis, but it has a measured blind spot -- a stream
+    #    that is BOTH coded with a non-default code AND interleaved scores
+    #    0/12 here, because the probe code is wrong so de-interleaving never
+    #    produces a codeword. That is what deep_search exists to fix.
     interleaver = None
     scores = {}
     geom = {}
-    if try_interleavers:
+    if try_interleavers and not deep_search:
         interleaver, scores, geom = detect_interleaver(
-            bits, K=K, polys=polys, return_geometry=True)
+            bits, K=K_probe, polys=polys_probe, return_geometry=True)
     res.interleaver = interleaver
     res.interleaver_scores = scores
     res.interleaver_geometry = geom
     chosen = scores.get(interleaver) if interleaver else direct
     res.residual = direct if chosen is None else chosen
 
+    # 3. Build the stream that will actually be decoded: de-interleave first.
+    target = bits
+    if interleaver:
+        # De-interleave with the geometry that actually won, not a default.
+        # Using the wrong factorisation here silently decodes the wrong
+        # permutation of the bits and reports it as a payload.
+        rc = (res.interleaver_geometry or {}).get(interleaver)
+        kw = {"rows": rc[0], "cols": rc[1]} if rc else {}
+        perm = interleave_perm(len(bits), interleaver, **kw)
+        target = np.empty(len(bits), dtype=np.uint8)
+        target[perm] = bits
+
+    # 3b. DEEP SEARCH: resolve code and interleaver JOINTLY, overriding both
+    #     of the guesses made above. Probing with the default code only works
+    #     when the true code is the default; here each candidate code is used
+    #     as the probe, so a non-default code AND an interleaver can both be
+    #     recovered. Measured 16/16 for K <= 7 versus 0/12 on the fast path.
+    if deep_search and res.fec_scheme_source == "searched":
+        lbl, il, rb, kp, gm, table = search_scheme_and_interleaver(bits)
+        res.deep_search = True
+        res.scheme_table = table
+        res.k9_skipped = any(r[3] == "skipped: stream too short" for r in table)
+        res.fec_scheme_residual = rb
+        if lbl is not None and kp is not None:
+            res.fec_scheme = lbl
+            K, polys = kp
+            res.interleaver = il
+            res.interleaver_geometry = gm or {}
+            res.residual = rb
+            # Rebuild the decode target with the jointly-chosen interleaver.
+            target = bits
+            if il:
+                rc = (gm or {}).get(il)
+                kw = {"rows": rc[0], "cols": rc[1]} if rc else {}
+                perm = interleave_perm(len(bits), il, **kw)
+                target = np.empty(len(bits), dtype=np.uint8)
+                target[perm] = bits
+            res.decoded_bits = viterbi_decode(target, K=K, polys=polys)
+            res.n_bits_out = len(res.decoded_bits)
+            res.analysed = True
+            res.reason = ("valid codeword"
+                          + _scheme_suffix(res)
+                          + (f"; interleaver {il}" if il else "")
+                          + _deep_suffix(res)
+                          + _sync_suffix(res))
+            return res
+        # Nothing fit jointly; fall through to the fast-path result, whose
+        # residual is already computed, so the reason still carries a number.
+        K, polys = DEFAULT_K, DEFAULT_POLYS
+        res.residual = rb if rb is not None else res.residual
+
+    # 4. Now identify the code, on the de-interleaved stream (fast path).
+    if res.fec_scheme_source == "searched" and not res.deep_search:
+        lbl, Kb, pb, rb, table = search_fec_scheme(target)
+        res.fec_scheme_table = table
+        res.fec_scheme_margin = scheme_margin(table)
+        res.fec_scheme_residual = rb
+        if lbl is not None:
+            res.fec_scheme = lbl
+            K, polys = Kb, pb
+            res.residual = rb
+        else:
+            # Nothing fit. Keep the default code so the residual check below
+            # refuses on a well-defined number, and record the best (still
+            # insufficient) score so the reason can quote it.
+            K, polys = DEFAULT_K, DEFAULT_POLYS
+            res.residual = rb if not interleaver else res.residual
+    elif res.fec_scheme_source == "given":
+        res.residual = reencode_residual(target, K=K, polys=polys)
+
     # A genuine codeword reproduces itself (or comes within the code's
     # correction radius). Anything above this is not a codeword and must not be
     # decoded -- see the note in the docstring.
-    FEC_THRESHOLD = 0.03
     if res.residual <= FEC_THRESHOLD:
         res.had_fec = True
-        target = bits
-        if interleaver:
-            # De-interleave with the geometry that actually won, not a default.
-            # Using the wrong factorisation here silently decodes the wrong
-            # permutation of the bits and reports it as a payload.
-            geom = res.interleaver_geometry or {}
-            rc = geom.get(interleaver)
-            kw = {"rows": rc[0], "cols": rc[1]} if rc else {}
-            perm = interleave_perm(len(bits), interleaver, **kw)
-            target = np.empty(len(bits), dtype=np.uint8)
-            target[perm] = bits
         res.decoded_bits = viterbi_decode(target, K=K, polys=polys)
         res.n_bits_out = len(res.decoded_bits)
         res.analysed = True
         res.reason = ("valid codeword"
+                      + _scheme_suffix(res)
                       + (f"; interleaver {interleaver}" if interleaver else "")
                       + _sync_suffix(res))
         return res
@@ -668,8 +966,54 @@ def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
     res.analysed = True
     res.reason = (f"no FEC detected (residual {res.residual:.3f} > "
                   f"{FEC_THRESHOLD:.2f}); stream appears uncoded or is not a "
-                  f"codeword" + _sync_suffix(res))
+                  f"codeword"
+                  + _scheme_suffix(res, for_refusal=True,
+                                   already_quoted=res.residual)
+                  + _sync_suffix(res))
     return res
+
+
+def _scheme_suffix(res, for_refusal=False, already_quoted=None):
+    """How the code was determined, appended to a reason string.
+
+    `already_quoted` suppresses the clause when the same number has already
+    been printed in the same sentence -- repeating it reads as two independent
+    findings when it is one.
+    """
+    if res.fec_scheme_source == "given":
+        return f"; code {res.fec_scheme} assumed (supplied by caller)"
+    if res.fec_scheme_source != "searched":
+        return ""
+    if res.fec_scheme and not for_refusal:
+        margin = res.fec_scheme_margin
+        if margin is not None:
+            return (f"; code {res.fec_scheme} identified from the stream "
+                    f"(best margin {margin:.3f} over runner-up)")
+        return f"; code {res.fec_scheme} identified from the stream"
+    # Refusal: report how close the best candidate came, so "no" carries a
+    # number rather than being an unqualified negative.
+    if res.fec_scheme_residual is not None:
+        if (already_quoted is not None
+                and abs(already_quoted - res.fec_scheme_residual) < 1e-9):
+            return ""      # the same figure is already in the sentence
+        return (f"; best code candidate fell short (residual "
+                f"{res.fec_scheme_residual:.3f} > {FEC_THRESHOLD:.2f})")
+    return ""
+
+
+def _deep_suffix(res):
+    """Note the joint search in the reason, including any candidate it skipped.
+
+    A skipped candidate is reported explicitly: "not tested" and "tested and
+    rejected" are different claims, and a reader cannot tell them apart from a
+    bare absence.
+    """
+    if not res.deep_search:
+        return ""
+    if res.k9_skipped:
+        return ("; deep search (each candidate code probed as the interleaver "
+                "assumption; K=9 not tested, stream too short)")
+    return "; deep search (each candidate code probed as the interleaver assumption)"
 
 
 def _sync_suffix(res):
