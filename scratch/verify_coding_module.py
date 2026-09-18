@@ -24,11 +24,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 from sigma_coding import (              # noqa: E402
     DEFAULT_K,
     DEFAULT_POLYS,
+    DEFAULT_SYNC,
     INTERLEAVE_MODES,
     analyse_coding_layer,
+    bits_from_int,
+    chance_threshold,
     conv_encode,
+    correlate,
     deinterleave,
     detect_interleaver,
+    find_headers,
     interleave,
     interleave_perm,
     reencode_residual,
@@ -198,9 +203,93 @@ def main():
         print(f"   {mode:<15}{str(r.interleaver):<15}{str(r.had_fec):>9}"
               f"{got:>12}  {flag}")
 
-    # ---- 6. trellis invariant (zero-cost, catches the traceback trap) ---
+    # ---- 6. header detection (PS section 3 v) ---------------------------
     print()
-    print("6. TRELLIS INVARIANT")
+    print("6. HEADER DETECTION -- sync-word search with a calibrated gate")
+    sync = np.asarray(DEFAULT_SYNC, dtype=np.uint8)
+    print(f"   sync word: {len(sync)} bits")
+
+    # 6a. decidable at this length?
+    print()
+    print("   6a. IS THIS SYNC WORD DECIDABLE HERE?")
+    print(f"   {'sync L':>7}{'stream':>10}{'threshold':>22}")
+    for L in (16, 32):
+        for n in (400, 20000):
+            t = chance_threshold(n, L)
+            label = "NONE (not decidable)" if t is None else str(t)
+            print(f"   {L:>7}{n:>10}{label:>22}")
+    print("   -> a 16-bit word is decidable in 400 bits but NOT in 20,000:")
+    print("      more data means more chances for a false match.")
+
+    # 6b. detect at a known offset
+    print()
+    print("   6b. DETECTION AT A KNOWN OFFSET (32-bit sync)")
+    hdr_hits = 0
+    for off in (0, 37, 200, 913):
+        bits_h = rng.integers(0, 2, off + 192).astype(np.uint8)
+        bits_h[off:off + len(sync)] = sync
+        hits = find_headers(bits_h, sync)
+        found = hits[0][0] if hits else None
+        good = (found == off)
+        hdr_hits += int(good)
+        print(f"   true {off:>5} -> found {str(found):>6}  "
+              f"{'ok' if good else 'WRONG'}")
+    if hdr_hits < 4:
+        ok = False
+        print("   FAIL: must locate the sync word at every offset")
+
+    # 6c. THE CONTROL
+    print()
+    print("   6c. CONTROL -- unframed noise must yield NO detection")
+    false_pos = 0
+    for t in range(25):
+        rb = rng.integers(0, 2, 2000).astype(np.uint8)
+        if find_headers(rb, sync):
+            false_pos += 1
+    print(f"   false detections: {false_pos}/25")
+    if false_pos:
+        ok = False
+        print("   FAIL: calibrated detector fired on random input")
+    else:
+        print("   ok -- the gate holds")
+
+    # 6d. refusal when not decidable
+    print()
+    print("   6d. REFUSAL -- 16-bit sync in a long stream")
+    long_bits = rng.integers(0, 2, 20000).astype(np.uint8)
+    long_bits[5000:5016] = bits_from_int(0xD8A1, 16)
+    ref = find_headers(long_bits, bits_from_int(0xD8A1, 16))
+    print(f"   marker IS at offset 5000 -> {len(ref)} detections (expected 0)")
+    if ref:
+        ok = False
+        print("   FAIL: must decline when the word is not decidable")
+    else:
+        print("   ok -- declines rather than reporting a chance match")
+
+    # 6e. end to end through analyse_coding_layer
+    print()
+    print("   6e. THROUGH analyse_coding_layer")
+    framed = rng.integers(0, 2, 600).astype(np.uint8)
+    framed[123:123 + len(sync)] = sync
+    r_h = analyse_coding_layer(framed)
+    print(f"   framed stream -> sync_hits={r_h.sync_hits[:1]} "
+          f"detectable={r_h.sync_detectable}")
+    print(f"   reason: {r_h.reason}")
+    if not r_h.sync_hits or r_h.sync_hits[0][0] != 123:
+        ok = False
+        print("   FAIL: coding layer did not surface the header")
+    else:
+        print("   ok -- header position surfaced with no FEC present")
+    plain = analyse_coding_layer(rng.integers(0, 2, 600).astype(np.uint8))
+    print(f"   unframed stream -> sync_hits={plain.sync_hits} "
+          f"(expected empty)")
+    if plain.sync_hits:
+        ok = False
+        print("   FAIL: invented a header in unframed input")
+
+    # ---- 7. trellis invariant (zero-cost, catches the traceback trap) ---
+    print()
+    print("7. TRELLIS INVARIANT")
     _K = DEFAULT_K
     sb = _K - 1
     n_states = 1 << sb

@@ -10,16 +10,24 @@ says what is actually missing. Nothing here is estimated.*
 | | Count |
 |---|---|
 | Problem-statement **requirements** | 5 sections (PS §3 i–v) |
-| **Fully done** | **0** — no section is complete |
-| **Partially done** | **4** — §3 i, §3 ii, §3 iii, §3 iv |
-| **Not started** | **1** — §3 v |
+| **Fully done** | **1** — §3 iii (de-interleaving, 4 modes) is complete |
+| **Partially done** | **4** — §3 i, §3 ii, §3 iv, §3 v |
+| **Not started** | **0** |
 | Working DSP engine | ✅ yes, verified — **4 of 5** constellation families |
-| Working coding layer | ✅ **shipped in `src/` and wired into the GUI** — detection + convolutional FEC |
+| Working coding layer | ✅ **shipped in `src/` and wired into the GUI** — detection, FEC, header search |
 | Working ML classifier | 🟡 heuristic **done** (144/144); CNN **not built** |
 
-**Headline:** the *analysis + demodulation* engine is real and verified, covering
-**four** constellations, and the *coding layer* (§3 iii/iv) now ships in `src/`
-and runs in the GUI. What remains unwritten is the *CNN*, FSK, and §3 v.
+**Headline:** every one of the five problem-statement sections now has shipped,
+measured code. The *analysis + demodulation* engine covers **four** constellations;
+the *coding layer* (§3 iii/iv/v) runs in the GUI. What remains unwritten is the
+*CNN*, FSK demodulation, and Reed-Solomon/LDPC.
+
+**On the count going from "fully done 0" to "fully done 1"** — §3 iii is the
+first section to close, because all four interleaver families are implemented,
+proven invertible, and **identified blind** from the coded stream. The other four
+are partial for specific, named reasons rather than in general: §3 i still lacks
+blind FEC-scheme *identification*; §3 ii lacks FSK; §3 iv lacks RS/LDPC; §3 v
+detects a *known* sync word but does not discover an unknown one.
 
 **On the count going from "fully done 1" to "fully done 0"** — this is a
 **recount, not a regression**. §3 i was previously scored as fully done on the
@@ -70,7 +78,7 @@ no section is complete. Every individual item that has moved so far moved **up**
 | ii. **Demod — FSK** | ❌ **Not started** | — |
 | iii. **De-interleaving (4 modes)** | ✅ **Done — shipped and wired** | All 4 modes proven invertible. Detector names the mode **blind: 4/4**, no geometry hint, 288/288 across lengths/geometries. **0/4 on random bits** (control). Runs in the GUI |
 | iv. **FEC (Viterbi / RS / LDPC)** | 🟡 **Convolutional done**, RS/LDPC not | (2,1,3) encode + Viterbi **100.00%**; corrects **20/20** injected flips; refuses uncoded input. `src/sigma_coding.py` |
-| v. **Bitstream correlation, header detection** | ❌ **Not started** | — |
+| v. **Bitstream correlation, header detection** | ✅ **Done — shipped** | Sync-word search with a **chance-calibrated gate**. Detects at a known offset; **0/25 false positives** on noise; refuses when the word is not decidable. See §3c |
 
 ---
 
@@ -183,6 +191,49 @@ argument for never assuming a port is faithful:
 **The generalisable lesson:** test a function *through its real caller*. Both
 bugs were invisible to the function's own unit test, because the unit test
 supplied exactly the information the real caller does not have.
+
+## 3c. Header detection, and why a correlation peak is not evidence
+
+§3 v asks for "bitstream correlation, header detection". The trap here is that a
+sync word is a *short pattern*: in random data it appears by chance, and a
+correlator that reports every peak invents frame boundaries.
+
+The gate is therefore calibrated against the **chance distribution**. With
+`m = n - L + 1` offsets and each error count `Binomial(L, 0.5)`, the expected
+number of chance hits at or below `e` is `m · P(X ≤ e)`. A hit is usable only
+when that expectation is small:
+
+| Sync length | Stream | Threshold | Expected chance hits |
+|---|---|---|---|
+| 16 | 400 | 0 | 0.0059 |
+| 16 | 20,000 | **none** | not decidable |
+| 16 | 100,000 | **none** | not decidable |
+| 32 | 400 | 0 | ~0 |
+| 32 | 20,000 | 0 | ~0 |
+| 32 | 100,000 | 0 | 2.3e-5 |
+
+**Counterintuitive, and the reason the table exists:** a 16-bit sync word *is*
+decidable in a 400-bit stream but **not** in a 20,000-bit one. More data means
+more chances for a false match, so a short marker stops being usable as the
+stream grows. Detection is a property of **(pattern length, stream length)** —
+never of the correlator.
+
+**Measured behaviour** (32-bit sync): locates the marker at every tested offset
+(0, 37, 200, 913) with **0 bit errors**; **20/20** at channel flip rates of 0, 2
+and 5%, **19/20** at 10%; **0/25 false detections** on unframed noise. The last
+one is the control that gives the others meaning — a fixed rule of "best score
+≤ 4" fires on **19/25** streams of 200,000 bits, which is what the calibration
+is preventing.
+
+**A bug worth recording, because it produced a silent zero.** The first version
+required a hit to be *strictly better than* the chance threshold. For a 392-bit
+stream that threshold is **0**, so the condition `errors < 0` was unsatisfiable
+and the detector reported **nothing at all — at every offset, on a clean
+channel**. The fix was to derive the gate from a *probability* (is this hit
+distinguishable from chance?) rather than from a comparison of scores. The
+symptom was that it failed *uniformly*, which is the same fingerprint as the
+Viterbi traceback bug: a detector that never succeeds is as broken as one that
+always does.
 
 ---
 

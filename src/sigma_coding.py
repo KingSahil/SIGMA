@@ -444,6 +444,107 @@ def detect_interleaver(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
 
 
 # ---------------------------------------------------------------------------
+# Bitstream correlation / header detection (PS section 3 v)
+# ---------------------------------------------------------------------------
+
+
+def bits_from_int(value, width):
+    """MSB-first bit tuple of `value` in `width` bits."""
+    return tuple((int(value) >> (width - 1 - i)) & 1 for i in range(width))
+
+
+#: Default sync word: 32 bits, the shape of real CCSDS/NASA sync markers.
+#: Length matters more than the correlator does -- see `chance_threshold`.
+DEFAULT_SYNC = bits_from_int(0x1ACFFC1D, 32)
+
+
+def correlate(rx, pattern):
+    """Hamming distance between `pattern` and every offset of `rx`.
+
+    Returns a list of ``(offset, errors)``. Lower is better; 0 is a perfect
+    match. Hard decisions, because that is what a demodulator delivers.
+    """
+    rx = np.asarray(rx, dtype=np.uint8).ravel()
+    pat = np.asarray(pattern, dtype=np.uint8).ravel()
+    L = len(pat)
+    if L == 0 or len(rx) < L:
+        return []
+    out = []
+    for i in range(len(rx) - L + 1):
+        out.append((i, int(np.sum(rx[i:i + L] != pat))))
+    return out
+
+
+def chance_threshold(n, L, p=0.5, max_false_alarm=0.01):
+    """Score at which a hit stops being explainable by chance, or ``None``.
+
+    Two distinct questions get conflated here, and doing so is a real bug:
+
+    1. *What is the best score chance will produce?* With ``m = n - L + 1``
+       offsets and each error count ``Binomial(L, p)``, the minimum of m draws
+       sits far below a single draw. Requiring "strictly better than that
+       minimum" is **unsatisfiable** whenever the minimum is already 0 -- and
+       an implementation that did this detected nothing at all.
+
+    2. *Is a given hit distinguishable from chance?* That is a probability
+       statement: the expected number of chance hits at or below ``e`` is
+       ``m * P(X <= e)``. A hit is usable only when that expectation is small.
+
+    So this returns the smallest ``e`` with ``m * P(X <= e) <= max_false_alarm``
+    and ``None`` when no such ``e`` exists -- meaning "this sync word cannot be
+    detected in a stream this long", which is the honest answer.
+
+    Note the counterintuitive consequence, measured in the self-test: a 16-bit
+    word IS decidable in a 400-bit stream but NOT in a 100,000-bit one. More
+    data means more chances for a false match, so a short marker stops being
+    usable as the stream grows.
+    """
+    from math import comb
+    m = max(n - L + 1, 1)
+    for e in range(0, L + 1):
+        tail = sum(comb(L, k) * (p ** k) * ((1 - p) ** (L - k))
+                   for k in range(0, e + 1))
+        if m * tail <= max_false_alarm:
+            return e
+    return None
+
+
+def find_headers(rx, sync=DEFAULT_SYNC, max_bits_errors=None, n_candidates=4,
+                 calibrated=True):
+    """Find sync-word positions in a bit stream.
+
+    Returns a list of ``(offset, errors)``, best first. **An empty list is the
+    correct answer** when the stream is unframed noise, or too long for this
+    sync word to be distinguishable from chance. Reporting a peak in either
+    case would be reporting chance as a detection.
+    """
+    rx = np.asarray(rx, dtype=np.uint8).ravel()
+    L = len(sync)
+    if len(rx) < L:
+        return []
+
+    thr = chance_threshold(len(rx), L) if calibrated else None
+    if calibrated and thr is None:
+        return []
+
+    if max_bits_errors is None:
+        max_bits_errors = thr
+
+    hits = [(off, err) for (off, err) in correlate(rx, sync)
+            if err <= max_bits_errors]
+    hits.sort(key=lambda oe: oe[1])
+
+    kept = []
+    for off, err in hits:
+        if any(abs(off - k) < L for k, _ in kept):
+            continue
+        kept.append((off, err))
+        if len(kept) >= n_candidates:
+            break
+    return kept
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point
 # ---------------------------------------------------------------------------
 
@@ -462,20 +563,28 @@ class CodingResult:
         self.decoded_bits = None         # information bits after FEC decode
         self.n_bits_in = 0
         self.n_bits_out = 0
+        # PS section 3 (v): sync-word / frame-boundary search.
+        self.sync_hits = []              # [(offset, errors)] best first
+        self.sync_detectable = None      # None = not decidable at this length
 
     def __repr__(self):
         if not self.analysed:
             return f"<CodingResult NOT ANALYSED: {self.reason}>"
+        fec = 'yes' if self.had_fec else 'no'
+        syn = (f"{len(self.sync_hits)} sync" if self.sync_hits
+               else ("no sync" if self.sync_detectable is not None
+                     else "sync n/a"))
         return (f"<CodingResult {self.interleaver or 'no interleaver'} "
-                f"FEC={'yes' if self.had_fec else 'no'} "
+                f"FEC={fec} {syn} "
                 f"residual={self.residual:.4f}>"
                 if self.residual is not None else
                 f"<CodingResult {self.interleaver or 'unknown'}>")
 
 
 def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
-                         try_interleavers=True, min_bits=32):
-    """Run interleaver detection and FEC decode over a demodulated bit stream.
+                         try_interleavers=True, min_bits=32,
+                         sync=DEFAULT_SYNC, try_headers=True):
+    """Run interleaver detection, FEC decode and header search over bit stream.
 
     Parameters
     ----------
@@ -484,15 +593,21 @@ def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
     try_interleavers : bool
         When False, skip detection and evaluate the stream assuming it was not
         interleaved. Useful for a fast path.
+    sync : array_like
+        Sync word for the header search (PS section 3 v). Defaults to a 32-bit
+        CCSDS-shaped marker.
+    try_headers : bool
+        When False, skip the header search.
 
     Returns
     -------
     CodingResult
 
-    Honest behaviour on ordinary (uncoded) traffic: the residual will be high
-    (~0.13+), ``had_fec`` stays False, and ``decoded_bits`` is left as None.
-    Viterbi over uncoded bits *would* return something, and reporting it would
-    be the bug -- so this function refuses instead.
+    Honest behaviour on ordinary (uncoded, unframed) traffic: the residual will
+    be high (~0.13+), ``had_fec`` stays False, ``decoded_bits`` is left as None,
+    and ``sync_hits`` is empty. Viterbi over uncoded bits *would* return
+    something, and reporting it would be the bug -- so this function refuses
+    instead.
     """
     res = CodingResult()
     bits = np.asarray(bits, dtype=np.uint8).ravel()
@@ -501,6 +616,13 @@ def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
     if len(bits) < min_bits:
         res.reason = f"only {len(bits)} bits; need >= {min_bits} to analyse"
         return res
+
+    # 0. Header search. Independent of FEC: a framing pattern can be present on
+    #    an uncoded stream, so this runs regardless. An empty result is normal.
+    if try_headers:
+        res.sync_detectable = chance_threshold(len(bits), len(sync))
+        if res.sync_detectable is not None:
+            res.sync_hits = find_headers(bits, sync)
 
     # 1. Is this a valid codeword as-is?
     direct = reencode_residual(bits, K=K, polys=polys)
@@ -539,11 +661,22 @@ def analyse_coding_layer(bits, K=DEFAULT_K, polys=DEFAULT_POLYS,
         res.n_bits_out = len(res.decoded_bits)
         res.analysed = True
         res.reason = ("valid codeword"
-                      + (f"; interleaver {interleaver}" if interleaver else ""))
+                      + (f"; interleaver {interleaver}" if interleaver else "")
+                      + _sync_suffix(res))
         return res
 
     res.analysed = True
     res.reason = (f"no FEC detected (residual {res.residual:.3f} > "
                   f"{FEC_THRESHOLD:.2f}); stream appears uncoded or is not a "
-                  f"codeword")
+                  f"codeword" + _sync_suffix(res))
     return res
+
+
+def _sync_suffix(res):
+    """Human-readable header-search outcome, appended to a reason string."""
+    if res.sync_hits:
+        off, err = res.sync_hits[0]
+        return f"; header found at bit {off} ({err} bit errors)"
+    if res.sync_detectable is None:
+        return "; no header search (sync word not decidable at this length)"
+    return ""

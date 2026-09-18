@@ -52,6 +52,15 @@ verify_coding_module.py       scores the SHIPPED module (src/sigma_coding.py)
 verify_coding_gui.py          the coding layer through the real window, with
                               widget text read back rather than screenshotted.
 
+Added for PS section 3 (v), bitstream correlation / header detection:
+header_ground_truth.py        the sync-word search and the CHANCE THRESHOLD
+                              that decides whether a correlation peak means
+                              anything. Records that detection is a property
+                              of (pattern length, stream length): a 16-bit word
+                              is decidable in 400 bits but NOT in 20,000, and
+                              that an earlier gate requiring "better than
+                              chance" was unsatisfiable and detected nothing.
+
 The last three need PyQt5 (they set QT_QPA_PLATFORM=offscreen themselves).
 """
 import os
@@ -70,6 +79,7 @@ SCRIPTS = [
     "verify_demod_gate.py",
     "verify_gui_all_mods.py",
     "fec_ground_truth.py",
+    "header_ground_truth.py",
     "verify_interleaver_detect.py",
     "verify_coding_module.py",
     "verify_coding_gui.py",

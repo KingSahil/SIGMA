@@ -295,7 +295,7 @@ is in `docs/STATUS_DONE_VS_LEFT.md` §1.
 | iii. De-interleaving (4 modes) | ✅ **Done and shipped** — detector **4/4 blind** in `src/sigma_coding.py` |
 | iv. FEC — convolutional | ✅ **Done and shipped** — (2,1,3) encode + Viterbi, **100.00%**, corrects **20/20** flips |
 | iv. FEC — Reed-Solomon / LDPC | ❌ **Not started** |
-| v. Bitstream correlation, header detection | ❌ **Not started** |
+| v. Bitstream correlation, header detection | ✅ **Done and shipped** — sync search with a chance-calibrated gate |
 
 **The 8PSK defect, and why it was invisible (measured 17–18 Sep).** 8PSK was a
 genuine algorithm defect with a specific cause: M-th power carrier recovery

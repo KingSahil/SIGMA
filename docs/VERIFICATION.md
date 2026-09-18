@@ -40,6 +40,7 @@ signals where the answer is known by construction.
 | `scratch/verify_interleaver_detect.py` | Names the interleaver **blind** from the coded stream |
 | `scratch/verify_coding_module.py` | Scores the **shipped** `src/sigma_coding.py`, incl. the uncoded-refusal safety property |
 | `scratch/verify_coding_gui.py` | The coding layer through the real window, widget text read back |
+| `scratch/header_ground_truth.py` | Sync-word search + the chance-threshold table for PS §3 v |
 | `scratch/verify_default_view.py` | Proves the GUI's *default* view completes the pipeline |
 | `scratch/verify_demod_panel.py` | Proves the DEMODULATION card shows real values, and the refusal shows a reason |
 | `scratch/measure_real_display.py` | Measures window/content fit on the **real** screen |
@@ -267,6 +268,46 @@ The operating boundary, the cost of the geometry search, and the two bugs the
 
 Reproduce: `scratch/verify_coding_module.py`, `scratch/verify_coding_gui.py`.
 
+### 2.7 Bitstream correlation / header detection (PS §3 v)
+
+Sync-word search, shipped alongside the FEC layer and run on every analysis.
+The gate is **calibrated against the chance distribution** rather than fixed:
+with `m = n - L + 1` offsets and error counts `Binomial(L, 0.5)`, the expected
+number of chance hits at or below `e` is `m · P(X ≤ e)`, and a hit is reported
+only when that expectation is below 1%.
+
+| Sync length | Stream | Threshold | Expected chance hits |
+|---|---|---|---|
+| 16 | 400 | 0 | 0.0059 |
+| 16 | 20,000 | **none** | not decidable |
+| 32 | 400 / 20,000 / 100,000 | 0 | ~0 / ~0 / 2.3e-5 |
+
+A 16-bit sync word is decidable in a 400-bit stream but **not** in a 20,000-bit
+one — more data means more chances for a false match. Detection is a property of
+**(pattern length, stream length)**, not of the correlator.
+
+| Test | Result |
+|---|---|
+| Locate at a known offset (0, 37, 200, 913) | **4/4**, 0 bit errors |
+| Channel flip rate 0 / 2 / 5% | **20/20** each |
+| Channel flip rate 10% | 19/20 |
+| **Control:** unframed noise | **0/25** false detections |
+| Refusal: 16-bit sync in a 20,000-bit stream | declines, as required |
+
+The control is what gives the rest meaning: a fixed "best score ≤ 4" rule fires
+on **19/25** streams of 200,000 bits.
+
+**A bug worth recording:** the first gate required a hit *strictly better than*
+the chance threshold. For a 392-bit stream that threshold is 0, so `errors < 0`
+was unsatisfiable and the detector returned **nothing at all, at every offset, on
+a clean channel**. Fixed by deriving the gate from a probability rather than a
+score comparison. The symptom — failing *uniformly* — matches the Viterbi
+traceback bug's fingerprint: a detector that never succeeds is as broken as one
+that always does.
+
+Reproduce: `scratch/header_ground_truth.py` (ground truth + chance table),
+`scratch/verify_coding_module.py` §6 (shipped module).
+
 ---
 
 ## 3. Known limitations (unresolved, stated plainly)
@@ -422,7 +463,7 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed) -- runs all 13 suites
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 14 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
 
 # Individual DSP suites
@@ -440,6 +481,7 @@ Always verify with:
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_interleaver_detect.py   # 4/4 blind, 0/4 on noise
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_coding_module.py        # shipped module, refusal check
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_coding_gui.py           # through the real window
+& "$env:USERPROFILE\radioconda\python.exe" scratch\header_ground_truth.py         # sync search + chance table
 
 # GUI: default view completes the pipeline
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_default_view.py

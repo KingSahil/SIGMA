@@ -1277,19 +1277,31 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             resid_txt = (f"{res.residual_freq_hz:+,.1f} Hz"
                          if res.residual_freq_hz is not None else "--")
             coding_txt = "--"
+            header_txt = "--"
             if coding is not None and coding.analysed:
                 if coding.had_fec:
                     coding_txt = (f"FEC {coding.interleaver or 'none'}"
                                   f" (residual {coding.residual:.3f})")
                 else:
                     coding_txt = "not present"
+                # PS section 3 (v). An empty result is the normal outcome for
+                # unframed traffic, so say so rather than leaving a blank.
+                if coding.sync_hits:
+                    off, err = coding.sync_hits[0]
+                    header_txt = f"bit {off} ({err} err)"
+                    if len(coding.sync_hits) > 1:
+                        header_txt += f" +{len(coding.sync_hits) - 1}"
+                elif coding.sync_detectable is None:
+                    header_txt = "not decidable at this length"
+                else:
+                    header_txt = "none found"
             self.lbl_demod_stats.setText(
                 f"Symbols: {res.n_symbols}      Bits: {len(res.bits)}      "
                 f"EVM: {res.evm_percent:.1f}%\n"
                 f"Carrier offset: {res.carrier_offset_hz:+,.0f} Hz      "
                 f"Residual tracked: {resid_txt}      "
                 f"SPS used: {res.sps:.2f}\n"
-                f"Coding: {coding_txt}"
+                f"Coding: {coding_txt}      Header: {header_txt}"
             )
             self.lbl_demod_reason.setVisible(False)
             # 48 bits in spaced groups: long enough to be a real payload
