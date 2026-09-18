@@ -254,10 +254,11 @@ In order:
    lowest fit error.
 5. **Decision + bit mapping.**
 
-**Verification: 46/46 configurations at exactly 100.00% bit accuracy**, spanning
-BPSK/QPSK × 25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds — and using the
-***detected*** symbol rate, not the true one. That last clause matters: it means
-L2's measurement is good enough to demodulate with.
+**Verification: 72/72 configurations locked, 0 refused**, spanning
+BPSK/QPSK/8PSK/16QAM × 25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds — and using the
+***detected*** symbol rate, not the true one. BPSK/QPSK/8PSK land at exactly
+**100.00%** bit accuracy and 16QAM at **99.98%**. That last clause matters: it
+means L2's measurement is good enough to demodulate with.
 
 In the GUI this is visible rather than implied — the **DEMODULATION &
 BITSTREAM** card shows state, method, symbol/bit counts, EVM, recovered carrier
@@ -276,31 +277,30 @@ measure the ambiguity instead of the demodulator.
 
 ## 5. What is NOT done (read this before quoting a feature list)
 
-The problem statement asks for five things. Three are done, two are not.
+The problem statement asks for five sections (§3 i–v). **No section is complete** —
+two are partially done and three have no code at all. The per-section arithmetic
+is in `docs/STATUS_DONE_VS_LEFT.md` §1.
 
 | Requirement (PS §3) | Status |
 |---|---|
 | i. Sampling frequency estimation | ⚠️ **Not measurable from samples.** Resolved with ranked provenance instead (§L1) |
-| i. Modulation classification | 🟡 Heuristic done; **CNN not yet integrated** |
+| i. Modulation classification | 🟡 Heuristic done — **all four constellations, 144/144**; the CNN is not built |
 | i. Interleaving type detection | ❌ **Not started** |
 | i. FEC scheme identification | ❌ **Not started** |
 | i. Other features (SNR, power, BW, constellation) | ✅ Done |
-| ii. Demodulation — BPSK / QPSK | ✅ Done (46/46 @ 100%) |
-| ii. Demodulation — **16QAM** | 🟢 **Works (99.98%), but the GUI gate refuses it** — see below |
-| ii. Demodulation — 8PSK | 🔴 Broken: 51.70% (random). Cause: `estimate_carrier_offset()` hardcodes `x⁴` |
+| ii. Demodulation — BPSK / QPSK | ✅ Done (**100.00%** each) |
+| ii. Demodulation — **16QAM** | ✅ Done (**99.98%**); the GUI gate now lets it through |
+| ii. Demodulation — 8PSK | ✅ Done (**100.00%**) — was 51.70% (random); see below |
 | ii. Demodulation — FSK | ❌ **Not started** |
 | iii. De-interleaving (4 modes) | ❌ **Not started** |
 | iv. FEC (Viterbi / RS / LDPC) | ❌ **Not started** |
 | v. Bitstream correlation, header detection | ❌ **Not started** |
 
-**A correction worth knowing (measured 17 Sep).** `sigma_demod.py` already defines
-8PSK and 16QAM constellations. Testing the demodulator directly, bypassing the GUI
-gate, gives 16QAM **99.98%** bit accuracy — so the gate is the only obstacle there.
-
-8PSK is a genuine algorithm defect, and the cause is specific: the M-th power
-carrier-recovery method requires the exponent to equal the constellation's
-rotational symmetry order. QPSK is 4-fold so `x⁴` is right; **8PSK is 8-fold and
-needs `x⁸`**. Measured error against a true +60 kHz offset:
+**The 8PSK defect, and why it was invisible (measured 17–18 Sep).** 8PSK was a
+genuine algorithm defect with a specific cause: M-th power carrier recovery
+requires the exponent to equal the constellation's **rotational symmetry order**.
+QPSK is 4-fold so `x⁴` was right; **8PSK is 8-fold and needs `x⁸`**. Measured
+error against a true +60 kHz offset:
 
 | Signal | x² | x⁴ | x⁸ |
 |---|---|---|---|
@@ -308,17 +308,32 @@ needs `x⁸`**. Measured error against a true +60 kHz offset:
 | 4-PSK | +303 Hz | **−2 Hz** | −2 Hz |
 | 8-PSK | −11111 Hz | −16390 Hz | **−2 Hz** |
 
-The ambiguity fold (`span = samp_rate / 4.0`) is tied to the same number and must
-become `samp_rate / power`.
+Note the failure mode: a wrong exponent never raises and never returns an
+obviously absurd number — it returns a *plausible* one, so only scoring against
+ground truth exposes it. The ambiguity fold (`span = samp_rate / 4.0`) was tied
+to the same number and is now `samp_rate / power`.
+
+**Resolved (measured 18 Sep).** The exponent now comes from a per-constellation
+symmetry table (BPSK 2, QPSK 4, 8PSK 8, **16QAM 4** — square QAM maps onto itself
+under 90°, so its order is not 16). Fixing it exposed three further defects, all
+of which had to be fixed before the estimate was trustworthy: **sub-bin
+refinement** (an FFT peak is only accurate to one bin, and a residual frequency
+error accumulates across the record), **Welch averaging before peak-picking** (on
+a single FFT a spurious peak outranks the true line), and a **decision-directed
+residual tracker with a second rotation pass** (removing a phase ramp shifts the
+best constant rotation). Result: **72/72 locked, 0 refused** — BPSK/QPSK/8PSK at
+100.00%, 16QAM at 99.98%. Details: `docs/STATUS_DONE_VS_LEFT.md` §5, Tier 1.
 
 See [`TEAM_TASKS.md`](TEAM_TASKS.md) for the work breakdown.
 
-**Known quality boundary.** At excess bandwidth α = 0.20 the envelope spectrum
-becomes nearly flat and "strongest bin" stops being reliable. Those cases report
-`NO DEMOD` / low confidence rather than a wrong number. Do not try to fix this
-with a zero-ISI null test — it was measured *worse* than taking the strongest
-bin (11/20 vs 14/20). The real fix is a **Gardner / Müller & Müller
-timing-error detector** after matched filtering.
+**Known quality boundary — resolved.** At excess bandwidth α = 0.20 the envelope
+spectrum becomes nearly flat and "strongest bin" stops being reliable. An earlier
+revision reported `NO DEMOD` on 6 such cases. That is **closed**: the full sweep is
+now **72/72 locked, 0 refused**, including every α=0.20 case, because the cause was
+the carrier-estimate defects (above) rather than the timing search. **A Gardner /
+Müller & Müller timing detector is not needed for this.** Do not try to fix it with
+a zero-ISI null test either — that was measured *worse* than taking the strongest
+bin (11/20 vs 14/20).
 
 **The awkward fact to design around.** The three real project captures
 (`signal.iq`, `bpsk_modulated_1msps.iq`, `qpsk_modulated_1msps.iq`) all report
@@ -350,9 +365,13 @@ feature list that collapses under one question.
    so. Image features, not raw IQ — it is more sample-efficient and it does not
    overclaim. Baseline already measured: **97.7%** on 360 captures
    (`scratch/train_baseline_model.py`), chance 25%.
-5. **Install a framework first.** No ML framework is present in Radioconda
-   (torch/tensorflow/sklearn all missing) and there is no training code in the
-   repo. See [`TEAM_TASKS.md`](TEAM_TASKS.md) §4 B0.
+5. **Install a framework into Radioconda first.** torch/tensorflow/sklearn are all
+   still missing there, and there is no training code in the repo. The framework
+   question itself is settled: torch 2.14.0+cpu / torchvision 0.29.0+cpu were
+   installed into an isolated venv and used to train a real ResNet-50 on this
+   dataset, so this is a **download**, not a dead end. It must go into Radioconda
+   rather than a side venv, or the app cannot import it.
+   See [`TEAM_TASKS.md`](TEAM_TASKS.md) §4 B0.
 
 ---
 
@@ -369,7 +388,10 @@ Individual suites:
 
 ```
 scratch/verify_symbol_rate.py     # 10/10 locked, per-case error
-scratch/verify_wide.py            # 46/46 perfect bit accuracy
+scratch/verify_wide.py            # BPSK/QPSK legacy sweep, 46/46 perfect
+scratch/verify_demod_all_mods.py  # all four constellations, 72/72 locked
+scratch/verify_modclass_parsimony.py  # constellation ID, 144/144
+scratch/verify_analogue_refused.py    # FM/AM/ASK/CW/audio all refused
 scratch/verify_sample_rate.py     # 25/25 provenance ranking
 scratch/verify_demod_gate.py      # 8/8 classification → demodulator routing
 ```

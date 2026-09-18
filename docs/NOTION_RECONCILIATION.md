@@ -42,7 +42,7 @@ Mapping onto what exists:
 | **Signal Detection & Segmentation** | **nothing** | ❌ **no code** |
 | AI/ML Classifier (CNN) | heuristic classifier only | 🟡 **heuristic done, CNN not integrated** |
 | Signal Parameters | L2 output dict + GUI metrics panel | ✅ **done** |
-| Demodulation | L3 — `sigma_demod.py` | ✅ BPSK/QPSK done; 16QAM works but gated; 8PSK broken; FSK absent |
+| Demodulation | L3 — `sigma_demod.py` | ✅ BPSK/QPSK/8PSK/16QAM done (72/72 locked, 0 refused); FSK absent |
 | FEC / Deinterleave | **nothing** | ❌ **no code** |
 | Bit Stream Correlation | **nothing** | ❌ **no code** |
 | FINAL REPORT | metrics panel exists; no export | 🟡 **partial** |

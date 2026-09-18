@@ -133,61 +133,93 @@ class SignalMetadata:
         else:
             return f"{seconds:.3f} s"
 
-    def _detect_psk_order(self, data, nfft=8192):
-        """Estimate PSK order from the M-th power carrier line.
+    def _psk_line_scores(self, data, nfft=8192, orders=(2, 4, 8)):
+        """Line-to-floor ratio in dB of the M-th power spectrum, for each M.
 
         Raising a PSK signal to the M-th power removes the modulation and
-        concentrates energy at M times the carrier offset. The M that
-        produces the sharpest line is the modulation order.
+        concentrates energy at M times the carrier offset. The M that produces
+        the sharpest line is the modulation order.
 
-        A BPSK signal squared gives a line; the same signal raised to the
-        fourth gives a much weaker, broader result (it is the second power of
-        an already-collapsed line). So we compare the line strength for M=2
-        against M=4 and take the winner.
+        Exposed separately from `_detect_psk_order` so the decision rule can be
+        scored against known signals without duplicating this measurement.
+
+        MEASURED WARNING -- these scores do NOT separate 2 from 4 from 8.
+        On known-good generated signals (100 ksps, alpha 0.35):
+
+            BPSK    x^2 = 50.1   x^4 = 42.1   x^8 = 37.1
+            QPSK    x^2 = 29.5   x^4 = 35.7   x^8 = 31.4
+            8PSK    x^2 = 29.2   x^4 = 17.9   x^8 = 28.8
+            16QAM   x^2 = 29.9   x^4 = 29.1   x^8 = 26.3
+
+        8PSK's strongest line is at x^2, not x^8, so "smallest M with a line as
+        strong as the best" reports 2 for an 8PSK capture. Worse, pure noise
+        scores 11.3 dB and an unmodulated carrier scores 220 dB, so that rule
+        labels noise "BPSK" and CW "8PSK". Do not reintroduce it. Identifying
+        8PSK and 16QAM from the signal remains an OPEN problem.
+
+        Returns {} when the capture is too short or the floor is degenerate.
+        """
+        n = min(len(data), nfft)
+        if n < 512:
+            return {}
+        seg = np.asarray(data[:n], dtype=np.complex128)
+        win = np.hanning(n)
+        scores = {}
+        for m in orders:
+            # Raise to the m-th power by repeated multiplication. The
+            # ** operator can drop the complex dtype on some numpy builds,
+            # and np.fft.rfft rejects complex input entirely on the
+            # Radioconda numpy (2.2.x) this app ships against, so use
+            # np.fft.fft and take the first half of the spectrum.
+            powered = seg.copy()
+            for _ in range(m - 1):
+                powered = powered * seg
+            spec_full = np.abs(np.fft.fft(powered * win)) ** 2
+            spec = np.asarray(spec_full[:spec_full.size // 2],
+                              dtype=np.float64)
+            if spec.size < 8:
+                return {}
+            # Exclude the DC neighbourhood, where the collapsed carrier
+            # sits when there is no residual offset.
+            body = spec[2:spec.size - 2]
+            if body.size == 0:
+                return {}
+            peak = float(np.max(body))
+            floor = float(np.median(body))
+            if floor <= 0:
+                return {}
+            scores[m] = 10.0 * np.log10(peak / floor)
+        return scores
+
+    def _detect_psk_order(self, data, nfft=8192):
+        """Estimate PSK order from the M-th power carrier line.
 
         Returns 2, 4, or 0 when no order is distinguishable. This is a
         measurement, not a guess -- but it is a weak one on short or noisy
         captures, hence the 0 case.
+
+        Only BPSK and QPSK are attempted, deliberately. An attempt to extend
+        this to 8PSK by picking the SMALLEST M whose line is as strong as the
+        best one was measured and REJECTED -- see the note on
+        `_psk_line_scores`. In short, it called pure noise "BPSK" and an
+        unmodulated carrier "8PSK", which is the confident-wrong-answer
+        failure this module exists to avoid. The conservative 2-vs-4
+        comparison below abstains on both.
         """
         try:
-            n = min(len(data), nfft)
-            if n < 512:
+            scores = self._psk_line_scores(data, nfft=nfft, orders=(2, 4))
+            if 2 not in scores or 4 not in scores:
                 return 0
-            seg = np.asarray(data[:n], dtype=np.complex128)
-            win = np.hanning(n)
-            scores = {}
-            for m in (2, 4):
-                # Raise to the m-th power by repeated multiplication. The
-                # ** operator can drop the complex dtype on some numpy builds,
-                # and np.fft.rfft rejects complex input entirely on the
-                # Radioconda numpy (2.2.x) this app ships against, so use
-                # np.fft.fft and take the first half of the spectrum.
-                powered = seg.copy()
-                for _ in range(m - 1):
-                    powered = powered * seg
-                spec_full = np.abs(np.fft.fft(powered * win)) ** 2
-                spec = np.asarray(spec_full[:spec_full.size // 2],
-                                  dtype=np.float64)
-                if spec.size < 8:
-                    return 0
-                # Exclude the DC neighbourhood, where the collapsed carrier
-                # sits when there is no residual offset.
-                body = spec[2:spec.size - 2]
-                if body.size == 0:
-                    return 0
-                peak = float(np.max(body))
-                floor = float(np.median(body))
-                if floor <= 0:
-                    return 0
-                scores[m] = 10.0 * np.log10(peak / floor)
             # Require a clear margin, otherwise report no decision.
-            if scores[4] - scores[2] > 3.0:
+            if scores[4] - scores[2] > self.PSK_LINE_MARGIN_DB:
                 return 4
-            if scores[2] - scores[4] > 3.0:
+            if scores[2] - scores[4] > self.PSK_LINE_MARGIN_DB:
                 return 2
             return 0
         except Exception:
             return 0
+
+    PSK_LINE_MARGIN_DB = 3.0  # "clearly stronger", in dB
 
     def _analyze_file(self):
         """Reads real samples and calculates verifiable physical properties."""

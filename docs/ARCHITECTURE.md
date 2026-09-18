@@ -146,14 +146,17 @@ graph LR
 - **Timing** — the best sampling phase is chosen by how tightly symbols cluster
   on the constellation, *not* by envelope amplitude.
 - **Phase correction** — a rotation search over the allowed symmetry rotations
-  (BPSK 180°, QPSK 90°) replaces an earlier `xⁿ` mean-phase method that left a
-  −41.5° residual and cost a constant 50% BER.
+  (BPSK 180°, QPSK 90°, 8PSK 45°) replaces an earlier `xⁿ` mean-phase method that
+  left a −41.5° residual and cost a constant 50% BER.
+- **Residual tracking** — after the constant rotation, a decision-directed
+  frequency tracker removes the remaining ramp and the rotation is searched
+  again, because removing a ramp shifts the best constant rotation.
 - **Refusal** — `DemodResult.locked` is `False` when the input is unusable,
   with a `reason` string. `EVM` acts as a quality guard.
 
-**Verified: 46/46 configurations at exactly 100.00% bit accuracy, BER 0.0000**,
-using the *detected* symbol rate rather than the true one. See
-[`VERIFICATION.md`](VERIFICATION.md).
+**Verified: 72/72 configurations locked, 0 refused** — BPSK/QPSK/8PSK at
+**100.00%** bit accuracy and 16QAM at **99.98%**, using the *detected* symbol rate
+rather than the true one. See [`VERIFICATION.md`](VERIFICATION.md).
 
 ### 2.8 Pipeline Gating (`_run_demod_stage()` in `sigma_main_window.py`)
 

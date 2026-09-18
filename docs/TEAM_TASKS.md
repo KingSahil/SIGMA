@@ -13,17 +13,19 @@ recalled. Where something is unknown or unstarted, it says so.*
 | Spectral features (SNR, power, OBW, constellation) | ✅ done | 4 live GNU Radio sinks in the GUI |
 | Symbol rate `R_s` | ✅ done | **10/10 locked**, 9 at exactly 0.00% error |
 | Sample rate `f_s` | ⚠️ resolved, not measured | Proven unmeasurable from samples; ranked provenance in the GUI |
-| PSK demodulation (BPSK/QPSK) | ✅ done | **46/46 at exactly 100.00%** bit accuracy |
-| QAM demodulation (16QAM) | 🟢 **works, gate blocks it** | **99.98% bit accuracy** measured today (§3 A1) |
-| PSK demodulation (8PSK) | 🔴 broken, cause known | 51.70% = random. Fix identified (§3 A2) |
+| PSK demodulation (BPSK/QPSK/8PSK) | ✅ done | **100.00%** each; 72/72 locked, 0 refused |
+| QAM demodulation (16QAM) | ✅ done | **99.98%** bit accuracy; the gate now routes it (§3 A1 ✅) |
+| PSK demodulation (8PSK) | ✅ fixed | 51.70% = random → **100.00%**. Cause was the carrier exponent (§3 A2 ✅) |
+| Constellation identification | ✅ done | **144/144** over 4 modulations × 4 rates × 3 α × 3 seeds; noise refused |
 | FSK demodulation | ❌ not started | no code |
 | CNN modulation classifier | 🟡 interface defined | contract in `L1_L2_L3_ARCHITECTURE.md` §4.1 |
 | Interleaving detection / de-interleaving | ❌ not started | no code |
 | FEC (Viterbi / RS / LDPC) | ❌ not started | no code |
 | Bitstream correlation / header detection | ❌ not started | no code |
 
-**Roughly 3 of 5 problem-statement sections are complete.** The remaining work is
-real work, not polish.
+**No problem-statement section is complete** — two are partially done (§3 i and
+§3 ii) and three have no code at all. The remaining work is real work, not polish.
+Per-section arithmetic: `STATUS_DONE_VS_LEFT.md` §1.
 
 ---
 
@@ -34,37 +36,38 @@ small and unblock other people.
 
 | # | Workstream | Owner | Size |
 |---|---|---|---|
-| A | **Unblock 16QAM + fix 8PSK carrier recovery** | Sahil (demod) | small, well-understood |
+| A | ~~**Unblock 16QAM + fix 8PSK carrier recovery**~~ ✅ **done** | Sahil (demod) | — |
 | B | **CNN modulation classifier** | Nimish (ML) | largest |
 | C | **FSK demodulation** | Sahil or a third hand | medium |
 | D | **De-interleaving + FEC** | unassigned — needs an owner | large |
 
 ---
 
-## 3. Workstream A — demodulation completeness (Sahil)
+## 3. Workstream A — demodulation completeness (Sahil) — ✅ **COMPLETE**
 
-Highest value first. **A1 is the single cheapest win in the project.**
+All three items below are done and verified. The root-cause notes are kept
+because they document *why* the defects were invisible, which is the reusable
+part. Evidence: `STATUS_DONE_VS_LEFT.md` §5 Tier 1 / 1b; reproduce with
+`scratch/verify_demod_all_mods.py` and `scratch/run_all.py`.
 
-### A1. Let 16QAM through the gate — *~5 lines*
+### A1. Let 16QAM through the gate — ✅ done
 
-`sigma_demod.py` already defines the 16QAM constellation and it **demodulates at
-99.98%**. The GUI gate in `sigma_main_window.py` refuses it:
+`sigma_demod.py` already defined the 16QAM constellation and demodulated at
+99.98%; the GUI gate refused it with a hardcoded list:
 
 ```python
 if "QPSK" in mod:        label = "QPSK"
 elif "BPSK" in mod:      label = "BPSK"
-elif "PSK" in mod:       # <-- 8PSK and 16QAM get refused here
+elif "PSK" in mod:       # <-- 8PSK and 16QAM got refused here
 ```
 
-**Do:** add QAM handling and make the gate ask the demodulator which
-constellations it supports, instead of hardcoding a list in two places.
+The gate now matches constellation names ascending by size, and when none match
+it asks the demodulator which constellations actually fit
+(`classify_constellation`). Measured: 16QAM **99.98%**, routed end to end.
 
-**Verify:** `scratch/probe_8psk_16qam.py` should show 16QAM added to the GUI path.
-Add it to the regression suite so it cannot silently break.
+### A2. Fix 8PSK carrier recovery — ✅ done
 
-### A2. Fix 8PSK carrier recovery — *small, root cause known*
-
-**Root cause: `estimate_carrier_offset()` hardcodes `x**4`.**
+**Root cause was `estimate_carrier_offset()` hardcoding `x**4`.**
 
 The M-th power method works because raising an M-fold-symmetric PSK signal to the
 M-th power collapses all constellation points onto one, leaving a pure tone at
@@ -78,31 +81,35 @@ M-th power collapses all constellation points onto one, leaving a pure tone at
 
 *(error vs a true +60,000 Hz offset; `scratch/probe_power_matrix.py`)*
 
-8PSK is 8-fold symmetric, so `x⁴` leaves the modulation partly intact and the
-residual biases the peak. **The exponent must become a parameter** —
-`power = constellation order` (2 / 4 / 8).
+The exponent is now read from a per-constellation symmetry table (BPSK 2, QPSK 4,
+8PSK 8, **16QAM 4** — square QAM maps onto itself under 90°), and the ambiguity
+fold is now `samp_rate / power` instead of a hardcoded `samp_rate / 4.0`.
 
-Also fix the ambiguity fold, which is tied to the same number:
+**Three further defects had to be fixed before the estimate was trustworthy** —
+each found by measurement, not reasoning:
 
-```python
-span = samp_rate / 4.0        # <-- must be samp_rate / power
-```
+1. **Sub-bin refinement.** An FFT peak is accurate to one bin, and a residual
+   frequency error *accumulates* across the record (BPSK @250 ksps: +58.6 Hz
+   left → 132° drift over 1500 symbols → refused a signal that decodes
+   perfectly).
+2. **Welch averaging before peak-picking.** On a single FFT a spurious peak
+   outranks the true line (8PSK @250 ksps seed 9: a spurious −270 kHz peak
+   scored 6.4 against the real +480 kHz line at 5.8, returning −33.8 kHz for a
+   true +60 kHz offset).
+3. **Decision-directed residual tracking + a second rotation pass.** `x⁴` does
+   *not* collapse 16QAM (its points sit at three radii → three phase clusters),
+   and removing a phase ramp shifts the best constant rotation.
 
-Measured symptom of the stale fold: a true +150 kHz offset on 8PSK returns
-`locked=False` with EVM 51.5%.
+Result: **100.00%**, up from 51.70% (chance).
 
-**Verify:** extend `scratch/probe_power_matrix.py` into a real assertion — every
-constellation must land within a few Hz at several offsets, and must lock across
-the full `±f_s/(2·power)` span.
+### A3. Loosen the α = 0.20 boundary — ✅ resolved without a timing detector
 
-### A3. Loosen the α = 0.20 boundary — *medium*
-
-Five BPSK cases and one QPSK case at `α = 0.20` report `NO DEMOD` rather than
-wrong bits. That is correct behaviour, but it is a capability gap.
-
-**Do:** implement a **Gardner** or **Müller & Müller** timing-error detector after
-matched filtering. Do **not** attempt the zero-ISI-null approach — it was
-measured and is *worse* than taking the strongest spectral bin (11/20 vs 14/20).
+Six cases at `α = 0.20` used to report `NO DEMOD`. The full sweep is now
+**72/72 locked, 0 refused**, including every α = 0.20 case — those failures were
+the carrier-estimate defects in A1/A2, not the timing phase search. **Do not
+implement a Gardner / Müller & Müller detector for this**; no case needs one now.
+(And do **not** attempt the zero-ISI-null approach — it was measured *worse* than
+taking the strongest spectral bin, 11/20 vs 14/20.)
 
 ### A4. FSK demodulation — *medium*
 
@@ -117,11 +124,17 @@ FSK will never be selected.
 
 Read `docs/L1_L2_L3_ARCHITECTURE.md` §4.1 first — the interface is already specified.
 
-### B0. Install a framework — *do this first, it is currently a hard blocker*
+### B0. Install a framework — *do this first; the blocker is a download, not a dead end*
 
-**No ML framework is installed.** Measured in Radioconda: `numpy` ✅, `scipy`
-1.15.2 ✅, `pandas` 2.2.3 ✅, but **`torch` ❌, `tensorflow` ❌, `sklearn` ❌**.
-There is also no training code and no model file anywhere in the repo.
+**No ML framework is importable by the app.** Measured in Radioconda: `numpy` ✅,
+`scipy` 1.15.2 ✅, `pandas` 2.2.3 ✅, but **`torch` ❌, `tensorflow` ❌,
+`sklearn` ❌**. There is also no training code and no model file anywhere in the
+repo.
+
+**This is proven solvable, not assumed:** torch 2.14.0+cpu / torchvision
+0.29.0+cpu were installed into an isolated venv and used to train a real
+ResNet-50 on this dataset. It took **1h57m** on a slow network but worked. So the
+remaining work here is wiring, not feasibility.
 
 Pick one and install it into Radioconda (not a separate venv, or the app cannot
 import it):
@@ -166,7 +179,8 @@ this purpose — the latter generates only 3 files). Sweep the dimensions that
 actually break things, not just the easy middle:
 
 - symbol rate 25–250 ksps (low SPS is the hard regime)
-- excess bandwidth α = 0.20 / 0.35 / 0.50 (**α=0.20 is the hard regime**)
+- excess bandwidth α = 0.20 / 0.35 / 0.50 (**α=0.20 is the most demanding case**;
+  it no longer fails — see §3 A3)
 - modulation: BPSK, QPSK, 8PSK, 16QAM
 - at least 2 seeds, to catch lucky noise
 
@@ -303,10 +317,14 @@ Individual suites:
 
 ```
 scratch/verify_symbol_rate.py      # symbol rate, 10/10
-scratch/verify_wide.py             # demodulation, 46/46
+scratch/verify_wide.py             # BPSK/QPSK legacy sweep, 46/46
+scratch/verify_demod_all_mods.py   # all four constellations, 72/72 locked
+scratch/verify_modclass_parsimony.py  # constellation ID, 144/144
+scratch/verify_analogue_refused.py    # FM/AM/ASK/CW/audio all refused
+scratch/verify_no_symbols_guard.py    # the ">=2 constellation phases" guard
+scratch/verify_gui_all_mods.py     # end to end through the GUI, 4/4
 scratch/verify_sample_rate.py      # provenance, 25/25
-scratch/verify_demod_gate.py       # gate routing, 8/8
-scratch/probe_8psk_16qam.py        # the A1 finding: 16QAM works, 8PSK does not
+scratch/verify_demod_gate.py       # gate routing, 11/11
 scratch/probe_power_matrix.py      # the A2 root cause: exponent matrix
 ```
 

@@ -16,3 +16,13 @@ data/**/*_audible.wav
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Assistant workspace (agent memory, scratch state) -- not part of the product
+.workbuddy-ai/
+.agents/
+
+# Verification suite console dumps
+scratch/*.out
+
+# Scratch-generated test captures (regenerated on demand by the suites)
+data/iq/gui_test_*.iq

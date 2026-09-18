@@ -12,9 +12,11 @@ SIGMA ingests complex IQ samples from binary (`.iq`) or audio (`.wav`) recording
 | :--- | :---: | :--- |
 | **1. INPUT** | ✅ Done | File ingestion, format detection, WAV-to-IQ conversion |
 | **2. ANALYSIS** | ✅ Done | RMS amplitude, peak amplitude, power (dBFS), 99% OBW, SNR, noise floor |
-| **3. MODULATION** | ✅ Done | **Symbol rate** + **SPS** measurement, PSK-order detection, modulation class |
+| **3. MODULATION** | ✅ Done | **Symbol rate** + **SPS** measurement, constellation named for all four |
 | **4. DEMOD** | ✅ Done | Carrier recovery, RRC matched filter, symbol timing, phase correction |
 | **5. BITS** | ✅ Done | Decision slicing and binary bitstream extraction |
+
+**Demodulation covers four constellations**, not two: BPSK, QPSK, 8PSK and 16QAM.
 
 Everything appears in the GUI, not just in logs. The **DEMODULATION & BITSTREAM**
 card shows the demodulator's actual output:
@@ -47,16 +49,16 @@ Reproduce with `scratch/run_all.py`; see [`docs/VERIFICATION.md`](docs/VERIFICAT
 | Metric | Result | Conditions |
 | :--- | :--- | :--- |
 | **Symbol rate estimation** | **10/10 locked, 9 at 0.00% error** | 25–250 ksps, α = 0.15–0.50 |
-| **PSK order detection** | **11/12 correct** | BPSK 6/6; the miss reports "undetermined" |
-| **Demodulation (bit accuracy)** | **46/46 at exactly 100.00%, BER 0.0000** | BPSK/QPSK × 25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds |
+| **Constellation identification** | **144/144 correct**, noise refused 3/3 | 4 modulations × 4 rates × 3 α × 3 seeds |
+| **Demodulation (bit accuracy)** | **72/72 locked, 0 refused** — BPSK/QPSK/8PSK **100.00%**, 16QAM **99.98%** | 4 modulations × 25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds |
+| **Analogue signals refused** | **5/5** refused (incl. a real FM/RDS capture) | CW, AM, ASK, audio baseband |
 
 **Honest limitations, stated up front:**
 
 - The one symbol-rate failure (500 ksps, SPS=2) self-reports `LOW` confidence
   instead of a wrong number — correct behaviour, not a crash.
-- **Excess bandwidth α = 0.20 is the hard regime.** BPSK α=0.20 (all 5 rates)
-  and one QPSK case report `NO DEMOD` rather than wrong bits. The real fix is a
-  Gardner / Müller & Müller timing-error detector after matched filtering.
+- **16QAM sits at 99.97–99.98%** — roughly 2 bit errors per 6000 bits. That is a
+  consistent noise floor, disclosed rather than rounded up to 100%.
 - **Sample rate cannot be measured from the samples — it is resolved and
   labelled instead.** There is no absolute time reference in an IQ file, so a
   capture of 1000 samples with a clock every 10 samples is byte-identical to one
@@ -227,6 +229,14 @@ All metrics are calculated from real sample data — no mocked values:
 > There are no fabricated percentage scores. Renaming a file cannot change the
 > reported modulation unless the measurement was already indeterminate — in
 > which case the result is explicitly labelled as an unverified hint.
+>
+> **Be precise about what `measured` means.** It is a **provenance** label —
+> *"this came from the signal, not the filename"* — not a confidence value. The
+> modulation card shows one class and this word; it does not show the runner-up,
+> and there is no per-class probability. The actual confidence is the **EVM**,
+> displayed after demodulation (e.g. *"8PSK is the simplest that fits (EVM 3.3%;
+> the classifier said BPSK)"*), which is a physical measurement with a known
+> noise floor.
 
 ---
 
@@ -291,7 +301,8 @@ label — it states the reason. The common causes:
 | :--- | :--- | :--- |
 | "No symbol rate lock" | No symbol clock is present in the samples — likely noise, or a non-pulse-shaped signal | Nothing to fix; the file has no digital modulation to recover |
 | "Symbol rate lock is only LOW (n.n dB)…Declined" | A clock was suspected but sits too close to the noise floor to trust | Correct refusal. Re-record with better SNR if you need bits |
-| "Detected 8PSK…" / "Digital PSK/FSK" | The constellation order is not one the slicer handles (it does BPSK and QPSK) | Correct refusal — a wrong constellation order gives wrong bits |
+| "Detected 8PSK…" / "Digital PSK/FSK" | No supported constellation explains the recovered symbols | Correct refusal — a wrong constellation order gives wrong bits |
+| "No digital constellation explains the symbols" | The signal is analogue, unmodulated, or a modulation outside BPSK/QPSK/8PSK/16QAM | Correct refusal. CW, AM/ASK, FM/RDS and audio baseband all land here by design |
 | Nothing wrong, but still unticked | Sample rate is wrong, so `SPS` is wrong | Check the **Sample rate** line under the input card; if it says `INFERRED` or `ASSUMED`, set the true rate in **⚙ Settings** |
 
 A label naming two possibilities (`BPSK / 2-FSK`) is **not** refused: the

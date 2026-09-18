@@ -64,26 +64,81 @@ signals where the answer is known by construction.
 | Conditions | 25–250 ksps, α = 0.15–0.50 |
 | Failure | 500 ksps (SPS = 2) — reports `LOW` confidence, not a wrong number |
 
-### 2.2 PSK order detection — `_detect_psk_order()` in `sigma_analyzer_core.py`
+### 2.2 Constellation identification
+
+Two tiers exist and they are **not equally strong**. Do not conflate them.
+
+**Tier 1 — spectral order detection** — `_detect_psk_order()` in `sigma_analyzer_core.py`
 
 | Metric | Value |
 | :--- | :--- |
 | Correct | **11 / 12** |
 | BPSK | 6 / 6 |
 | The one miss | returns `0` = "undetermined", i.e. abstains |
+| **Ceiling** | **names BPSK or QPSK only.** It cannot report 8PSK: measured, 8PSK's strongest M-th-power line sits at `x²` (29.2) rather than `x⁸` (28.8), so an 8PSK capture is reported as BPSK |
 
-### 2.3 Demodulation — `src/sigma_demod.py`
+**Tier 2 — symbols-fitted parsimony classifier** — `classify_constellation()` in `sigma_demod.py`
 
 | Metric | Value |
 | :--- | :--- |
-| Configurations | **46** |
-| At exactly 100.00% bit accuracy | **46 / 46** |
-| Mean / min accuracy | 100.00% / 100.00% |
-| BER | 0.0000 |
-| Conditions | BPSK & QPSK × 25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds |
+| Correct | **144 / 144** |
+| Conditions | 4 modulations × 4 rates × 3 excess bandwidths × 3 seeds |
+| Noise | **abstains 3/3** (correct) |
+| Guard | requires **≥2 distinct constellation phases** |
+
+Tier 2 supersedes tier 1 and names all four constellations. In the GUI, tier 1's
+label is used as the first hypothesis, and tier 2 corrects it — visibly:
+
+```
+symbols: 8PSK is the simplest that fits (EVM 3.3%; the classifier said BPSK)
+```
+
+**An attempt to extend tier 1 to M=8 was measured and reverted.** It labelled
+pure noise "BPSK" and an unmodulated carrier "8PSK" — confident wrong answers.
+The conservative 2-vs-4 comparison (with `PSK_LINE_MARGIN_DB = 3.0`) is what
+ships. The measured evidence is recorded in `_psk_line_scores()`'s docstring so
+the experiment is not repeated.
+
+### 2.3 Demodulation — `src/sigma_demod.py`
+
+| Modulation | Cases | Perfect | Mean | Min | Refused | Carrier exponent |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| BPSK | 18 | 18 | 100.00% | 100.00% | 0 | 2 |
+| QPSK | 18 | 18 | 100.00% | 100.00% | 0 | 4 |
+| 8PSK | 18 | 18 | 100.00% | 100.00% | 0 | 8 |
+| 16QAM | 18 | 0 | 99.98% | 99.97% | 0 | 4 |
+| **Total** | **72** | | | | **0** | |
+
+Conditions: 4 modulations × 25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds.
+Reproduce: `scratch/verify_demod_all_mods.py`.
 
 Critically, the demodulator was fed the **detected** symbol rate, not the true
 one. A version that only passes when handed the answer would prove nothing.
+
+**16QAM does not reach exactly 100%** — roughly 2 bit errors per 6000 bits, a
+consistent noise floor. Reported as measured rather than rounded up.
+
+**The α = 0.20 gap closed on its own.** An earlier revision had 6 `NO DEMOD`
+cases at α = 0.20 and proposed a Gardner / Müller & Müller timing detector. The
+full sweep is now **72/72 locked, 0 refused** — those failures were the
+carrier-estimate defects (§2.3a), not the timing phase search. **No case needs a
+timing detector now.** Do not implement one for this reason.
+
+**Two further defects had to be fixed, both found by measurement:**
+
+- **Sub-bin carrier refinement.** An FFT peak is accurate to one bin, and a
+  residual *frequency* error accumulates across the record rather than staying a
+  constant phase offset. Measured: BPSK at 250 ksps left +58.6 Hz, drifting 132°
+  over 1500 symbols, refusing a signal that decodes perfectly.
+- **Welch averaging before peak-picking.** On a single FFT a spurious peak
+  outranks the true line. Measured on 8PSK at 250 ksps seed 9: a spurious peak
+  at −270 kHz scored 6.4 against the real +480 kHz line at 5.8, returning
+  −33.8 kHz for a true +60 kHz offset.
+- **Decision-directed residual tracking + a second rotation pass.** `x⁴` does
+  *not* collapse 16QAM (its points sit at three radii, leaving three measured
+  phase clusters). Removing a phase ramp also shifts the best constant rotation,
+  so a rotation chosen before the frequency correction is stale. Measured on
+  16QAM at 100 ksps: EVM 29.0% → **3.4%**.
 
 ### 2.4 GUI
 
@@ -107,9 +162,6 @@ DEMOD stats   : Symbols: 6000      Bits: 6000      EVM: 26.6%
 BITSTREAM     : 0110 0101 1001 1100 0110 1101 0010 1111 1000 0100 1100 0000 ...
 ```
 
-The recovered carrier offset `+59,998 Hz` independently confirms the estimator:
-the test signal was generated with a **60 kHz** offset, so the error is 2 Hz.
-
 The refusal path is equally explicit:
 
 ```
@@ -125,6 +177,30 @@ metric grid, the demodulation card and the pipeline stepper are all visible.
 (Measuring width under `QT_QPA_PLATFORM=offscreen` is misleading: the dummy
 screen is 800×600 and badly distorts the layout's size hints.)
 
+**All four constellations were then verified end-to-end through the GUI** by
+driving the real update path and reading the widget strings back —
+`scratch/verify_gui_all_mods.py`, **4/4 lock**:
+
+| File | State | Constellation on screen | EVM | Residual tracked |
+| :--- | :--- | :--- | ---: | ---: |
+| `gui_test_bpsk_100ksps_1msps.iq` | LOCKED | BPSK | 3.3% | −1.4 Hz |
+| `gui_test_qpsk_100ksps_1msps.iq` | LOCKED | QPSK | 3.3% | −1.4 Hz |
+| `gui_test_8psk_100ksps_1msps.iq` | LOCKED | 8PSK *(classifier said BPSK)* | 3.3% | −1.4 Hz |
+| `gui_test_16qam_100ksps_1msps.iq` | LOCKED | 16QAM | 3.3% | −1.4 Hz |
+
+The refusal path was verified with a **genuine unmodulated carrier** file
+(`gui_test_cw_unmodulated.iq`) — three forced labels, all correctly declined:
+
+```
+CW / Unmodulated   -> UNSUPPORTED   (Detected CW / Unmodulated; no digital constellation)
+AM / ASK           -> UNSUPPORTED   (Detected AM / ASK; no digital constellation explains)
+FM / RDS           -> UNSUPPORTED   (Detected FM / RDS; no digital constellation explains)
+```
+
+> **Note the 8PSK row.** It locks *despite* the spectral classifier saying BPSK —
+> that is tier 2 correcting tier 1, and the tooltip says so out loud. This is the
+> single clearest demonstration that the two tiers are distinct.
+
 ### 2.5 Filename-independence
 
 Renaming `bpsk_modulated_1msps.iq` → `anonymous_capture.iq` → `random_data.iq`
@@ -136,19 +212,22 @@ match on the filename.
 
 ## 3. Known limitations (unresolved, stated plainly)
 
-### 3.1 Low excess bandwidth (α = 0.20)
+### 3.1 Low excess bandwidth (α = 0.20) — **closed**
 
-BPSK at α = 0.20 (all five rates) and QPSK 200 ksps α = 0.20 seed 7 report
-`NO DEMOD`. At low α the envelope spectrum becomes nearly flat and
-"strongest bin" is no longer reliable; the estimator detects that it cannot
-decide and declines.
+An earlier revision reported `NO DEMOD` on BPSK at α = 0.20 (all five rates) and
+QPSK 200 ksps α = 0.20 seed 7. **The full sweep is now 72/72 locked, 0 refused**,
+including every α = 0.20 case.
 
-**A refusal is correct behaviour. A confident wrong bitstream is the actual
-failure mode.**
+The cause was **not** the timing phase search. The 6 failures were downstream of
+the carrier-estimate defects fixed in §2.3 — a biased or bin-quantised carrier
+estimate drifts the constellation during the record, which looks exactly like a
+timing problem. **Do not implement a Gardner / Müller & Müller detector for
+this**; no case needs one now.
 
-The real fix is a **Gardner or Müller & Müller timing-error detector** after
-matched filtering — a proper closed-loop timing recovery — not another
-envelope-spectrum heuristic.
+**One approach to keep rejected:** a zero-ISI-null timing search was tried and
+**measured worse** than simply taking the strongest spectral bin — 11/20 against
+14/20. It is recorded here so it is not attempted again as a "fix" for a low-α
+failure.
 
 ### 3.2 Sample rate cannot be measured — only resolved and labelled
 
@@ -284,8 +363,18 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed)
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 9 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
+
+# Individual DSP suites
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_symbol_rate.py          # 10/10
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_demod_all_mods.py       # 72/72, 0 refused
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_modclass_parsimony.py   # 144/144
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_no_symbols_guard.py     # CW/ASK refused
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_analogue_refused.py     # FM/AM/ASK/CW/audio
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_demod_gate.py           # 11/11 routing
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_gui_all_mods.py         # 4/4 through the GUI
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_wide.py                 # BPSK/QPSK legacy, 46/46
 
 # GUI: default view completes the pipeline
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_default_view.py
@@ -302,6 +391,9 @@ Always verify with:
 # GUI: real window, 4 second smoke test
 & "$env:USERPROFILE\radioconda\python.exe" scratch\launch_smoke.py
 ```
+
+`scratch/` is development-only and not part of the shipped application, but
+keeping it is what makes the claims above checkable.
 
 `scratch/` is development-only and not part of the shipped application, but
 keeping it is what makes the claims above checkable.

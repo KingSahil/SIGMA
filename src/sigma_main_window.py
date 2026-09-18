@@ -1152,38 +1152,34 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             self._reset_demod_panel("DECLINED", reason)
             return
 
-        # Which demodulator to run.
+        # Which constellation to slice against.
         #
-        # "BPSK / 2-FSK" is an ambiguity in the *classifier*, not a disagreement
+        # The spectral classifier can only name BPSK and QPSK: its M-th power
+        # order detector is deliberately conservative, and 8PSK/16QAM are not
+        # separable that way. Measured on known signals, 8PSK's strongest line
+        # is at x^2 rather than x^8, so the spectral route calls an 8PSK capture
+        # BPSK. When it has no usable name, ask the demodulator instead --
+        # demodulating under each constellation and keeping the simplest that
+        # explains the symbols identifies all four (verified 144/144, with
+        # noise correctly refused rather than guessed).
+        #
+        # "BPSK / 2-FSK" is an ambiguity in the classifier, not a disagreement
         # with the demodulator: it fires on the signature of BPSK (constant
         # envelope, high phase variance after differencing), which is precisely
-        # what a BPSK demodulator can resolve. The old test
-        # `"BPSK" in mod or "QPSK" in mod` excluded the QPSK half of a
-        # "QPSK / something" label too. Try the PSK reading and let the
+        # what a BPSK demodulator can resolve. Try the PSK reading and let the
         # demodulator's own lock decide -- it is the thing that actually knows
         # whether the bits came out, and it declines on its own if they did not.
         #
-        # Order matters: QPSK must be tested first, because "QPSK" contains no
-        # "BPSK" but a label could name both.
+        # Order matters. A combined label such as "QPSK / 8PSK" names two
+        # candidates, and the same parsimony that resolves the EVM tie applies:
+        # prefer the constellation with fewer points, so test ascending by
+        # size. Note "8PSK" contains neither "QPSK" nor "BPSK".
         mod = m.modulation_class or ""
-        if "QPSK" in mod:
-            label = "QPSK"
-        elif "BPSK" in mod:
-            label = "BPSK"
-        elif "PSK" in mod:
-            # "Digital PSK/FSK", "8PSK"... not a modulation we can slice.
-            reason = (f"Detected {mod}; the demodulator handles the PSK "
-                      f"constellations it can slice (BPSK, QPSK). Declined "
-                      f"rather than guessing a constellation order.")
-            self.lbl_demod.setToolTip(reason)
-            self._reset_demod_panel("UNSUPPORTED", reason)
-            return
-        else:
-            reason = (f"Demodulator supports BPSK and QPSK; "
-                      f"detected {mod or 'unknown'}.")
-            self.lbl_demod.setToolTip(reason)
-            self._reset_demod_panel("UNSUPPORTED", reason)
-            return
+        label = None
+        for name in ("BPSK", "QPSK", "8PSK", "16QAM"):
+            if name in mod:
+                label = name
+                break
 
         try:
             samples = self._read_samples_for_demod()
@@ -1191,11 +1187,56 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
                 return
 
             try:
-                from .sigma_demod import demodulate
+                from .sigma_demod import demodulate, classify_constellation
             except ImportError:
-                from sigma_demod import demodulate
-            res = demodulate(samples, self.samp_rate, modulation=label,
-                             sps=sr["samples_per_symbol"])
+                from sigma_demod import demodulate, classify_constellation
+
+            sps = sr["samples_per_symbol"]
+            source = f"classifier: {mod or 'unknown'}"
+
+            if label is None:
+                # Ask the demodulator. It is safe to ask even when the label
+                # names a different family: `classify_constellation` refuses
+                # any signal that does not occupy at least two constellation
+                # phases, which was measured to correctly refuse a real FM/RDS
+                # capture, plus AM, ASK, CW and audio baseband.
+                #
+                # That matters, because 16QAM is misclassified as "AM / ASK" by
+                # the spectral classifier -- its envelope varies, and the
+                # classifier reads that as amplitude modulation. A family check
+                # here would block the one modulation we can now slice.
+                label, evms = classify_constellation(samples, self.samp_rate, sps)
+                if label is None:
+                    best = min(evms.values())
+                    best_txt = ("n/a" if best == float("inf")
+                                else f"{best:.0f}%")
+                    reason = (
+                        f"Detected {mod or 'unknown'}; no digital constellation "
+                        f"explains the symbols (best EVM {best_txt}). Declined "
+                        f"rather than guessing a constellation order.")
+                    self.lbl_demod.setToolTip(reason)
+                    self._reset_demod_panel("UNSUPPORTED", reason)
+                    return
+                source = (f"symbols: {label} is the simplest that fits "
+                          f"(EVM {evms[label]:.1f}%)")
+
+            res = demodulate(samples, self.samp_rate, modulation=label, sps=sps)
+
+            # The spectral classifier cannot separate BPSK from 8PSK (its
+            # strongest M-th-power line sits at x^2 either way), so an 8PSK
+            # capture can arrive here named BPSK -- and a BPSK slice refuses
+            # it. Before giving up, ask the demodulator-based classifier, which
+            # reads the symbols themselves and does separate all four.
+            if not res.locked:
+                alt, alt_evms = classify_constellation(samples, self.samp_rate, sps)
+                if alt is not None and alt != label:
+                    res_alt = demodulate(samples, self.samp_rate,
+                                         modulation=alt, sps=sps)
+                    if res_alt.locked:
+                        res = res_alt
+                        source = (f"symbols: {alt} is the simplest that fits "
+                                  f"(EVM {alt_evms[alt]:.1f}%; "
+                                  f"the classifier said {label})")
             self.demod_result = res
 
             if not res.locked:
@@ -1206,7 +1247,8 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=True)
             self._set_pipeline_step(self.lbl_bits, "5. BITS", done=True)
             self.lbl_demod.setToolTip(
-                f"{res.modulation}, {res.n_symbols} symbols, EVM {res.evm_percent:.1f}%")
+                f"{res.modulation}, {res.n_symbols} symbols, "
+                f"EVM {res.evm_percent:.1f}%  --  chosen by {source}")
             self.lbl_bits.setToolTip(
                 f"{len(res.bits)} bits recovered, EVM {res.evm_percent:.1f}%")
 
@@ -1215,11 +1257,14 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             self.lbl_demod_state.setProperty("class", "DemodValue")
             self.lbl_demod_method.setText(
                 f"{res.modulation}  \u00b7  RRC matched filter")
+            resid_txt = (f"{res.residual_freq_hz:+,.1f} Hz"
+                         if res.residual_freq_hz is not None else "--")
             self.lbl_demod_stats.setText(
                 f"Symbols: {res.n_symbols}      Bits: {len(res.bits)}      "
                 f"EVM: {res.evm_percent:.1f}%\n"
                 f"Carrier offset: {res.carrier_offset_hz:+,.0f} Hz      "
-                f"SPS used: {res.sps:.2f}      Timing: searched"
+                f"Residual tracked: {resid_txt}      "
+                f"SPS used: {res.sps:.2f}"
             )
             self.lbl_demod_reason.setVisible(False)
             # 48 bits in spaced groups: long enough to be a real payload

@@ -1,6 +1,6 @@
 # Done vs. remaining — the honest status table
 
-*Verified 17 Sep 2026. Every "done" row has a test you can run; every "left" row
+*Verified 18 Sep 2026. Every "done" row has a test you can run; every "left" row
 says what is actually missing. Nothing here is estimated.*
 
 ---
@@ -10,14 +10,28 @@ says what is actually missing. Nothing here is estimated.*
 | | Count |
 |---|---|
 | Problem-statement **requirements** | 5 sections (PS §3 i–v) |
-| **Fully done** | **1** (§3 i, partially — see caveat) |
-| **Partially done** | **2** |
-| **Not started** | **2** |
-| Working DSP engine | ✅ yes, verified |
-| Working ML classifier | ❌ no model, no framework installed |
+| **Fully done** | **0** — no section is complete |
+| **Partially done** | **2** — §3 i, §3 ii |
+| **Not started** | **3** — §3 iii, §3 iv, §3 v |
+| Working DSP engine | ✅ yes, verified — **4 of 5** constellation families |
+| Working ML classifier | 🟡 heuristic **done** (144/144); CNN **not built** |
 
-**Headline:** the *analysis + demodulation* engine is real and verified. The
-*coding layer* (interleaving + FEC) and the *ML model* do not exist.
+**Headline:** the *analysis + demodulation* engine is real and verified, and as of
+this revision it covers **four** constellations instead of two. The *coding layer*
+(de-interleaving + FEC) and the *CNN* still do not exist.
+
+**On the count going from "fully done 1" to "fully done 0"** — this is a
+**recount, not a regression**. §3 i was previously scored as fully done on the
+strength of the feature metrics alone, which was generous: *FEC-scheme
+identification* and *interleaving-type detection* are both named inside §3 i and
+neither has any code. Scoring each section against its own full text, no section
+is complete. Every individual item that moved this revision moved **up**:
+
+| Moved | From | To |
+|---|---|---|
+| Demodulable constellations | 2 (BPSK/QPSK) | **4** (+8PSK, +16QAM) |
+| PSK order identifiable from the signal | 2 | **4** (new symbol-domain classifier) |
+| Analogue signals correctly refused | not tested | **5/5** (incl. a real FM/RDS capture) |
 
 ---
 
@@ -27,13 +41,13 @@ says what is actually missing. Nothing here is estimated.*
 |---|---|---|---|
 | 1 | **INPUT** — load `.iq` / `.wav` | ✅ **Done** | WAV header parse; stereo→IQ, mono→baseband; `complex64` decode |
 | 2 | **ANALYSIS** — metrics | ✅ **Done** | 8 metrics computed live; 4 GNU Radio sinks rendering |
-| 3 | **MODULATION** — symbol rate + class | ✅ **Done** | R_s **10/10 locked** (9 exact to 0.00%); PSK order measured |
-| 4 | **DEMOD** — symbols → bits | 🟡 **Partial** | BPSK/QPSK **46/46 at exactly 100.00%**; 16QAM works but gated; 8PSK broken |
+| 3 | **MODULATION** — symbol rate + class | ✅ **Done** | R_s **10/10 locked** (9 exact to 0.00%); constellation named for all four (144/144) |
+| 4 | **DEMOD** — symbols → bits | ✅ **Done, all four constellations** | **72/72 locked, 0 refused**; BPSK/QPSK/8PSK **100.00%**, 16QAM **99.98%** |
 | 5 | **BITS** — display bitstream | ✅ **Done** | GUI card shows symbols, bits, EVM, carrier offset, SPS, leading bits |
 | — | **DE-INTERLEAVE** | ❌ **Not started** | no code exists (`grep` finds nothing) |
 | — | **FEC DECODE** | ❌ **Not started** | no code exists |
 | — | **BIT CORRELATION** | ❌ **Not started** | no code exists |
-| — | **CNN CLASSIFIER** | ❌ **Not started** | dataset + baseline done; **no model, no ML framework** |
+| — | **CNN CLASSIFIER** | ❌ **Not started** | dataset + baseline done; **no network exists**. Framework is now *proven installable* (torch 2.14.0+cpu measured), but it is **not wired into the app** — see Tier 1 row 3 |
 
 ---
 
@@ -46,9 +60,9 @@ says what is actually missing. Nothing here is estimated.*
 | i. **FEC scheme identification** | ❌ **Not started** | — |
 | i. **Interleaving type detection** | ❌ **Not started** | — |
 | i. **Other features** (SNR, power, BW, constellation) | ✅ **Done** | RMS, peak, dBFS, 99% OBW, noise floor, SNR, peak freq, constellation |
-| ii. **Demod — BPSK / QPSK** | ✅ **Done** | **46/46 at exactly 100.00%**, using the *detected* symbol rate |
-| ii. **Demod — QAM (16QAM)** | 🟢 **Works, gate blocks it** | **99.98%** measured; GUI refuses it — ~5-line fix |
-| ii. **Demod — PSK (8PSK)** | 🔴 **Broken, cause known** | 51.70% = random. `estimate_carrier_offset()` hardcodes `x**4`, needs `x**8` |
+| ii. **Demod — BPSK / QPSK** | ✅ **Done** | **100.00%** over the full sweep, using the *detected* symbol rate |
+| ii. **Demod — QAM (16QAM)** | ✅ **Done** | **99.98%** (min 99.97%) — the gate now lets it through |
+| ii. **Demod — PSK (8PSK)** | ✅ **Done** | **100.00%** over the full sweep. Was 51.70% (chance); the carrier exponent was hardcoded to `x**4` and is now `x**8` |
 | ii. **Demod — FSK** | ❌ **Not started** | — |
 | iii. **De-interleaving (4 modes)** | ❌ **Not started** | block / convolutional / diagonal / pseudo-random — none |
 | iv. **FEC (Viterbi / RS / LDPC)** | ❌ **Not started** | — |
@@ -61,11 +75,14 @@ says what is actually missing. Nothing here is estimated.*
 | Item | Result | Reproduce with |
 |---|---|---|
 | Symbol rate estimation | **10/10 locked**, 9 at 0.00% error | `scratch/verify_symbol_rate.py` |
-| Demodulation (BPSK/QPSK) | **46/46 at exactly 100.00%** bit accuracy | `scratch/verify_wide.py` |
+| Demodulation (BPSK/QPSK) | **100.00%** bit accuracy | `scratch/verify_wide.py` |
+| Demodulation, all four constellations | **72/72 locked, 0 refused**; BPSK/QPSK/8PSK **100.00%**, 16QAM **99.98%** | `scratch/verify_demod_all_mods.py` |
+| Constellation classifier (from symbols) | **144/144** correct; noise refused **3/3** | `scratch/verify_modclass_parsimony.py` |
+| Unmodulated carrier / ASK refused | **5/5** analogue signals refused, incl. a real FM/RDS capture | `scratch/verify_analogue_refused.py` |
+| GUI end-to-end, all four | **4/4 lock**, correct constellation, measured values on screen | `scratch/verify_gui_all_mods.py` |
 | Sample-rate provenance | **25/25** ranking cases | `scratch/verify_sample_rate.py` |
-| Demod gate routing | **8/8** classification matrix | `scratch/verify_demod_gate.py` |
+| Demod gate routing | **11/11** classification matrix | `scratch/verify_demod_gate.py` |
 | GUI rate-source chip | **3/3** confidence states | `scratch/verify_rate_chip.py` |
-| 16QAM (bypassing gate) | **99.98%** | `scratch/probe_8psk_16qam.py` |
 | Carrier-recovery exponent matrix | each constellation correct at its own order | `scratch/probe_power_matrix.py` |
 | CNN feature pipeline | **97.7%** on 360 synthetic captures (chance 25%) | `scratch/train_baseline_model.py` |
 | All of the above at once | — | `scratch/run_all.py` |
@@ -86,25 +103,65 @@ byte-identical to 2× rate with a clock every 20. So it is *resolved and labelle
 
 ## 5. What is left, in priority order
 
-### Tier 1 — cheap, unblocks other work
+### Tier 1 — ~~cheap, unblocks other work~~ **ALL THREE DONE**
 
-| # | Task | Size | Why it matters |
+| # | Task | Status | Result |
 |---|---|---|---|
-| 1 | **Let 16QAM through the gate** | ~5 lines | Adds a whole modulation family. Already 99.98% — the gate is the only obstacle |
-| 2 | **Fix 8PSK exponent** (`x**4` → `x**8`, fold `samp_rate/power`) | small | Adds another family. Root cause measured |
-| 3 | **Install an ML framework** (torch/tensorflow — currently **none installed**) | 10 min | Hard blocker: no model can be trained or run without it |
+| 1 | **Let 16QAM through the gate** | ✅ **Done** | 99.98% (min 99.97%); the GUI now slices it |
+| 2 | **Fix 8PSK exponent** (`x**4` → `x**8`, fold `samp_rate/power`) | ✅ **Done** | 51.70% (chance) → **100.00%**. Also needed a sub-bin refinement, Welch averaging and residual-frequency tracking — see below |
+| 3 | **Install an ML framework** | 🟡 **Proven installable, not wired in** | torch 2.14.0+cpu / torchvision 0.29.0+cpu installed into an isolated venv and used for real measurements. **The app still cannot import it** — that install must go into Radioconda |
 
-**Tier 1 alone takes demodulable families from 2 → 4**, because the demodulator
-core already handles them.
+**Tier 1 took demodulable families from 2 → 4.** Two extra things were needed
+beyond the exponent fix, both found by measurement rather than reasoning:
+
+- **Sub-bin carrier refinement.** The FFT peak is only accurate to one bin, and
+  a residual frequency error *accumulates* rather than staying a constant phase
+  offset. On BPSK at 250 ksps the x² line landed one bin off, leaving +58.6 Hz,
+  which drifted 132° across 1500 symbols and refused a signal that decodes
+  perfectly. Refining on a fine grid over the whole record fixed it.
+- **Residual frequency tracking + a second rotation pass.** Removing a linear
+  phase ramp shifts the best constant rotation, so a rotation chosen before the
+  frequency correction is stale. On 16QAM at 100 ksps that alone was worth EVM
+  29.0% → 3.4%.
+- **Welch averaging before peak-picking.** On a single FFT a spurious peak can
+  outrank the true line. Measured on 8PSK at 250 ksps (seed 9): a spurious peak
+  at −270 kHz scored 6.4 against the real +480 kHz line at 5.8, giving a
+  −33.8 kHz estimate for a true +60 kHz offset.
+
+### Tier 1b — the classifier, which was the real blocker for 8PSK/16QAM
+
+The demodulator could slice four constellations but the **classifier could only
+name two**, so the GUI could never route to 8PSK or 16QAM.
+
+| # | Task | Status | Result |
+|---|---|---|---|
+| 1b | **Identify 8PSK / 16QAM from the signal** | ✅ **Done** | **144/144** over 4 modulations × 4 rates × 3 excess bandwidths × 3 seeds |
+
+The spectral route cannot do this: measured, 8PSK's strongest M-th-power line is
+at `x²` rather than `x⁸`, so it calls an 8PSK capture BPSK. (An attempt to extend
+the spectral order detector to M=8 was **measured and rejected** — it labelled
+noise "BPSK" and an unmodulated carrier "8PSK".)
+
+The working method is **parsimony over the demodulator's own EVM**: demodulate
+under each constellation, keep the ones that fit, and take the one with the
+fewest points. Parsimony is required, not cosmetic — a lower-order constellation
+is a geometric *subset* of a higher-order one, so a BPSK capture fits BPSK, QPSK
+and 8PSK equally well and EVM alone cannot choose.
+
+One guard was essential and was found by testing rather than reasoning: a
+PSK/QAM signal must occupy **at least two constellation phases**. Without it, an
+unmodulated carrier is reported as a *perfect* BPSK fit (measured EVM **0.2%**),
+and an ASK envelope fits 16QAM at 8.3%. With it, a real FM/RDS capture, AM, ASK,
+CW and audio baseband are all correctly refused.
 
 ### Tier 2 — the demodulator's remaining quality gates
 
 | # | Task | Size | Detail |
 |---|---|---|---|
-| 4 | **Timing detector** (Gardner / Müller & Müller) | medium | Fixes α=0.20 — 6 cases currently report `NO DEMOD`. Do **not** use the zero-ISI-null approach: measured *worse* (11/20 vs 14/20) |
+| 4 | ~~**Timing detector** (Gardner / Müller & Müller)~~ | — | ✅ **No longer needed for α=0.20.** The full sweep is now **72/72 locked, 0 refused**, including every α=0.20 case. The old 6 `NO DEMOD` failures were the carrier-estimate defects in Tier 1, not the timing phase search. Do **not** reach for the zero-ISI-null approach: measured *worse* (11/20 vs 14/20) |
 | 5 | **Train the CNN** | medium | Dataset + baseline already built. Needs ~40 lines of network |
 | 6 | **FSK demodulation** | medium | Not started. Must first resolve the `"BPSK / 2-FSK"` classifier ambiguity or FSK is never selected |
-| 7 | **Wire CNN into the gate** + keep heuristic as cross-check | medium | Depends on 5 |
+| 7 | **Wire CNN into the gate** + keep heuristic as cross-check | medium | Depends on 5. Note the demodulator-based classifier (Tier 1b) already covers all four constellations at 144/144, so the CNN's marginal value is now **robustness on real signals**, not basic capability |
 
 ### Tier 3 — the two unstarted problem-statement sections
 
@@ -137,19 +194,70 @@ core already handles them.
 | Claim | Reality |
 |---|---|
 | *"SPS is the most informative CNN feature"* | **False, measured.** All 4 scalars are at chance (25%) on 4 classes. The constellation image carries the label. Corrected in 3 docs |
-| *"Demodulation is planned, not done"* | **Stale.** 46/46 at 100% |
+| *"Demodulation is planned, not done"* | **Stale.** 72/72 locked, 0 refused — BPSK/QPSK/8PSK at 100.00%, 16QAM at 99.98% |
+| *"8PSK demodulation is broken (51.70%)"* | **Stale.** Fixed → **100.00%**. The carrier exponent was hardcoded `x⁴` and is now per-constellation |
+| *"16QAM works but the gate refuses it"* | **Stale.** The gate routes it; 16QAM locks end to end in the GUI |
 | *"Sample rate inferred from filename"* | **Stale.** Ranked provenance, 25/25 verified |
 | *"Classifier accuracy unmeasured"* | **Stale.** 97.7% synthetic, chance 25% |
 | *"Confidence: 96.4%"* | **Fabricated.** Was hardcoded and changed if you renamed the file. Deleted |
+| *"The modulation card reports a confidence of X"* | **There is no numeric confidence.** The card shows a **label** plus the provenance word `"measured"`, and discards the alternatives. `"measured"` means *from the signal, not the filename*, not *high confidence*. See §7 |
+| *"The CNN will make classification more accurate"* | **Unsupported as stated.** The demodulator-EVM classifier already scores 144/144 and refuses noise. The CNN's value is requirement coverage + a second opinion, not a measured accuracy gain |
 | *"Signal Detection & Segmentation"* (Notion) | **No code**, and PS §3 does not ask for it |
 | *Flask / MERN / Three.js* (Notion) | **None exist.** SIGMA is a PyQt5 desktop app |
 
 ---
 
-## 7. The demo boundary
+## 7. What the classifier actually outputs (and what it does not)
+
+Worth writing down because it is easy to misread the UI.
+
+**The modulation card shows a label, not a probability.** It displays one class
+plus the provenance word `"measured"`:
+
+```
+modulation_class      = "BPSK"
+modulation_confidence = "measured"      # provenance, NOT a confidence value
+```
+
+`"measured"` means *"this came from the signal, not from the filename"*. It is a
+real distinction — an earlier version returned hardcoded confidences whenever
+`"bpsk"`/`"qpsk"` appeared in the filename, so renaming a file changed the answer.
+That is fixed. But it is **not** a statement of how sure the classifier is, and
+it is not a percentage.
+
+**The other candidates are discarded, not ranked.** There is no `0.94 / 0.04 /
+0.01 / 0.01` anywhere in the shipped code. The app cannot report *"BPSK, but QPSK
+was a close second"* — and that matters, because BPSK-vs-QPSK is the exact pair
+the regression suite found hardest to separate (`PSK_LINE_MARGIN_DB = 3.0` is a
+thin margin).
+
+**The real confidence is expressed as EVM, after demodulation.** Two tiers exist,
+and they are not equally strong:
+
+| Tier | Source | Strength |
+|---|---|---|
+| 1. Spectral classifier | M-th-power line | Names **BPSK or QPSK only**; cannot separate 8PSK (its strongest line sits at `x²` either way) |
+| 2. Symbols-fitted classifier | EVM against each constellation | **144/144**, names all four, abstains on noise |
+
+Tier 2 supersedes tier 1, and the GUI shows that it did:
+
+> *"symbols: 8PSK is the simplest that fits (EVM 3.3%; the classifier said BPSK)"*
+
+That tooltip is the honest confidence display — a **physical** measurement with a
+known noise floor (3.3% against roughly a 3% floor), which is stronger evidence
+than a softmax probability would be.
+
+**If a numeric per-class confidence is wanted**, the source to use is tier 2's
+per-constellation EVM (already computed as `evms` in `_run_demod_stage`), not a
+new network. Showing the runner-up's EVM would make the margin visible.
+
+---
+
+## 8. The demo boundary
 
 **Can be demoed now, truthfully:** load a capture → 8 metrics + 4 plots →
-symbol rate lock → recover bits from BPSK/QPSK at 100% → show the bitstream.
+symbol rate lock → recover bits from **any of the four constellations**
+(BPSK/QPSK/8PSK at 100%, 16QAM at 99.98%) → show the bitstream.
 
 **Cannot be demoed:** de-interleaving, FEC, bit correlation, before/after-FEC
 bitstrings, automated report export.
@@ -162,10 +270,17 @@ edited.
 
 ---
 
-## 8. Say it this way to judges
+## 9. Say it this way to judges
 
-> **"L1/L2/L3 are done and verified against generated ground truth; the CNN is
-> the layer we are integrating; de-interleaving and FEC are the next stage."**
+> **"L1/L2/L3 are done and verified against generated ground truth — demodulation
+> covers BPSK, QPSK, 8PSK and 16QAM at 100/100/100/99.98% over 72 configurations.
+> The CNN is a second opinion on classification, not a prerequisite: the
+> classifier derived from the demodulator's own EVM already names all four
+> constellations at 144/144 and refuses noise. De-interleaving and FEC are the
+> next stage."**
 
 A truthful boundary scores better than a feature list that collapses under one
-follow-up question.
+follow-up question. In particular, do **not** claim the CNN improves accuracy —
+on every dataset we can measure it is equal to the classifier already shipped,
+and its value is requirement coverage plus cross-validation.
+
