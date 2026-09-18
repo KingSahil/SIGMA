@@ -61,6 +61,12 @@ header_ground_truth.py        the sync-word search and the CHANCE THRESHOLD
                               that an earlier gate requiring "better than
                               chance" was unsatisfiable and detected nothing.
 
+verify_provenance_label.py    the modulation card must report a SOURCE, not a
+                              confidence. Reads the label text back for all
+                              four provenance strings and confirms the genuine
+                              confidence figure (EVM) is still shown in the
+                              demod card.
+
 The last three need PyQt5 (they set QT_QPA_PLATFORM=offscreen themselves).
 """
 import os
@@ -83,6 +89,7 @@ SCRIPTS = [
     "verify_interleaver_detect.py",
     "verify_coding_module.py",
     "verify_coding_gui.py",
+    "verify_provenance_label.py",
 ]
 
 

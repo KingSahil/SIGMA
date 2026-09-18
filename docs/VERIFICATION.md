@@ -35,12 +35,13 @@ signals where the answer is known by construction.
 | `scratch/verify_symbol_rate.py` | Symbol-rate accuracy vs known `R_s` |
 | `scratch/verify_demod.py` | Bit accuracy vs known transmitted bits |
 | `scratch/verify_wide.py` | 46-case sweep across modulation × rate × α × seed |
-| `scratch/run_all.py` | Runs all **11**. **This is the command you want.** |
+| `scratch/run_all.py` | Runs all **15**. **This is the command you want.** |
 | `scratch/fec_ground_truth.py` | `(2,1,3)` convolutional encode/decode + the four interleaver modes, with invertibility and burst proofs |
 | `scratch/verify_interleaver_detect.py` | Names the interleaver **blind** from the coded stream |
 | `scratch/verify_coding_module.py` | Scores the **shipped** `src/sigma_coding.py`, incl. the uncoded-refusal safety property |
 | `scratch/verify_coding_gui.py` | The coding layer through the real window, widget text read back |
 | `scratch/header_ground_truth.py` | Sync-word search + the chance-threshold table for PS §3 v |
+| `scratch/verify_provenance_label.py` | The modulation card reports a **source**, not a confidence — all four provenance strings read back from the widget |
 | `scratch/verify_default_view.py` | Proves the GUI's *default* view completes the pipeline |
 | `scratch/verify_demod_panel.py` | Proves the DEMODULATION card shows real values, and the refusal shows a reason |
 | `scratch/measure_real_display.py` | Measures window/content fit on the **real** screen |
@@ -152,7 +153,7 @@ Verified by **reading widget text**, not by screenshot:
 ```
 input file      : demo_bpsk_100ksps_1msps.iq
 symbol rate     : 100.00 ksps        samples/symbol : 10.00
-lock            : HIGH (37.7 dB)     modulation     : BPSK / Confidence: measured
+lock            : HIGH (37.7 dB)     modulation     : BPSK / Source: measured
 step 4 DEMOD    : 4. DEMOD ✓         step 5 BITS    : 5. BITS ✓
 ```
 
@@ -307,6 +308,36 @@ that always does.
 
 Reproduce: `scratch/header_ground_truth.py` (ground truth + chance table),
 `scratch/verify_coding_module.py` §6 (shipped module).
+
+### 2.8 The modulation card reports a source, not a confidence
+
+A truthfulness property rather than a DSP one, but it needs a test all the same,
+because it is user-visible and it regressed twice.
+
+`"measured"` answers *where the class came from* (the signal, not the filename).
+It is **not** a probability, and the four-way candidate distribution does not
+exist — runner-up classes are discarded, not ranked. So a label reading
+`Confidence: measured` invites the reader to treat a provenance word as a score.
+
+Checked by reading the widget text back for **every** provenance value:
+
+| stored value | rendered |
+|---|---|
+| `measured` | `Source: measured` |
+| `indeterminate` | `Source: indeterminate` |
+| `filename hint, unverified` | `Source: filename hint, unverified` |
+| `--` | `Source: --` |
+
+The test also asserts the label contains **no digits**, so a future "helpful"
+percentage cannot be reintroduced without failing, and confirms the **genuine**
+confidence figure (EVM) is still displayed in the demod card — removing the
+misleading word must not remove real information.
+
+The field was renamed `modulation_confidence` → `modulation_source`; the old
+name remains as a read/write property alias, and the test asserts the two
+cannot disagree.
+
+Reproduce: `scratch/verify_provenance_label.py`.
 
 ---
 
@@ -463,7 +494,7 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed) -- runs all 14 suites
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 15 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
 
 # Individual DSP suites
@@ -482,6 +513,7 @@ Always verify with:
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_coding_module.py        # shipped module, refusal check
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_coding_gui.py           # through the real window
 & "$env:USERPROFILE\radioconda\python.exe" scratch\header_ground_truth.py         # sync search + chance table
+& "$env:USERPROFILE\radioconda\python.exe" scratch\verify_provenance_label.py     # card says Source, not Confidence
 
 # GUI: default view completes the pipeline
 & "$env:USERPROFILE\radioconda\python.exe" scratch\verify_default_view.py

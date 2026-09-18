@@ -1,4 +1,14 @@
 # -*- coding: utf-8 -*-
+"""
+!!! SUPERSEDED -- DO NOT RE-RUN !!!
+
+This script was a ONE-SHOT generator: running it overwrites
+src/sigma_main_window.py wholesale, discarding every subsequent fix to that
+file (the coding-layer card, the header line, the provenance label rename,
+the demod gate, ...). The generated source is now maintained directly.
+Kept only as a historical record of the first UI layout.
+It still emits the OLD "Confidence: measured" label.
+"""
 code = '''"""
 SIGMA - Signal Intelligence & Generalized Modulation Analyzer
 Clean, Modern, Fully Responsive RF Intelligence Workstation

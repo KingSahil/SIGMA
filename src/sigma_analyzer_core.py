@@ -105,7 +105,16 @@ class SignalMetadata:
 
         # Modulation classification status
         self.modulation_class = "Not analyzed"
-        self.modulation_confidence = "--"
+        # NOTE -- despite the historical field name, this is NOT a confidence.
+        # It records WHERE the classification came from: "measured" (derived
+        # from the signal), "indeterminate" (no class fit), or "filename hint,
+        # unverified". Do not treat it as a probability; there is no
+        # probability to report here. The four-way candidate distribution does
+        # not exist -- runner-up classes are discarded, not ranked. The real
+        # physical confidence figure is EVM, in the demodulation stage.
+        # `modulation_source` is the honest name; the old one is kept as a
+        # property alias so existing callers keep working.
+        self.modulation_source = "--"
         self.candidate_modulations = [
             "AM", "FM", "ASK", "FSK", "BPSK", "QPSK", "8PSK", "QAM"
         ]
@@ -113,6 +122,21 @@ class SignalMetadata:
         # Analyze if file exists
         if self.file_exists and self.num_samples > 0:
             self._analyze_file()
+
+    @property
+    def modulation_confidence(self):
+        """Deprecated alias for `modulation_source`.
+
+        Kept because the old name is referenced elsewhere in the tree. It was
+        misleading: the value is a provenance label ("measured",
+        "indeterminate", "filename hint, unverified"), never a probability.
+        New code should read `modulation_source`.
+        """
+        return self.modulation_source
+
+    @modulation_confidence.setter
+    def modulation_confidence(self, value):
+        self.modulation_source = value
 
     def _format_filesize(self, num_bytes):
         if num_bytes <= 0:
@@ -377,27 +401,27 @@ class SignalMetadata:
 
                 if order == 4:
                     self.modulation_class = "QPSK"
-                    self.modulation_confidence = "measured"
+                    self.modulation_source = "measured"
                 elif order == 2:
                     self.modulation_class = "BPSK"
-                    self.modulation_confidence = "measured"
+                    self.modulation_source = "measured"
                 elif amp_std < 0.05 and f_std < 0.1:
                     self.modulation_class = "CW / Unmodulated"
-                    self.modulation_confidence = "measured"
+                    self.modulation_source = "measured"
                 elif amp_std > 0.3:
                     self.modulation_class = "AM / ASK"
-                    self.modulation_confidence = "measured"
+                    self.modulation_source = "measured"
                 elif amp_std < 0.12 and f_std > 0.4:
                     self.modulation_class = "BPSK / 2-FSK"
-                    self.modulation_confidence = "measured"
+                    self.modulation_source = "measured"
                 else:
                     self.modulation_class = "Digital PSK/FSK"
-                    self.modulation_confidence = "indeterminate"
+                    self.modulation_source = "indeterminate"
 
                 # Filename hint: weak, and never overrides a confident
                 # measurement. Only recorded when the measurement above was
                 # indeterminate.
-                if self.modulation_confidence == "indeterminate":
+                if self.modulation_source == "indeterminate":
                     hint = None
                     for token, name in (("bpsk", "BPSK"), ("qpsk", "QPSK"),
                                         ("rds", "FM / RDS"), ("fm", "FM / RDS"),
@@ -409,7 +433,7 @@ class SignalMetadata:
                             break
                     if hint:
                         self.modulation_class = f"{hint} (filename hint)"
-                        self.modulation_confidence = "filename hint, unverified"
+                        self.modulation_source = "filename hint, unverified"
 
         except Exception as e:
             print(f"[SIGMA] Error analyzing samples: {e}")

@@ -225,7 +225,9 @@ All metrics are calculated from real sample data — no mocked values:
 | **Modulation Class** | Phase variance + amplitude variance + PSK order, measurement-driven |
 
 > [!NOTE]
-> Confidences report `measured` / `indeterminate` / `filename hint, unverified`.
+> The modulation card reports a **source**, not a confidence. It reads
+> `Source: measured` / `Source: indeterminate` /
+> `Source: filename hint, unverified`.
 > There are no fabricated percentage scores. Renaming a file cannot change the
 > reported modulation unless the measurement was already indeterminate — in
 > which case the result is explicitly labelled as an unverified hint.

@@ -867,7 +867,14 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.lbl_mod_class.setWordWrap(True)
         box_lay.addWidget(self.lbl_mod_class)
 
-        self.lbl_mod_conf = QtWidgets.QLabel("Confidence: --")
+        # NOTE: this line reports PROVENANCE, not a confidence level. The
+        # string it displays is "measured" (derived from the signal itself),
+        # "indeterminate" (no class fit), or "filename hint, unverified".
+        # None of those is a probability, so the label must not say
+        # "Confidence:" -- that would invite the reader to treat a source as a
+        # score. The real, physical confidence figure is EVM, shown in the
+        # DEMODULATION card once the signal is demodulated.
+        self.lbl_mod_conf = QtWidgets.QLabel("Source: --")
         self.lbl_mod_conf.setProperty("class", "BigModulationConfidence")
         box_lay.addWidget(self.lbl_mod_conf)
 
@@ -1098,7 +1105,8 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
         # Modulation
         self.lbl_mod_class.setText(m.modulation_class)
-        self.lbl_mod_conf.setText(f"Confidence: {m.modulation_confidence}")
+        # Provenance, not confidence -- see the note where this label is built.
+        self.lbl_mod_conf.setText(f"Source: {m.modulation_confidence}")
 
         self._run_demod_stage()
 

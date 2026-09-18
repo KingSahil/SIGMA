@@ -337,6 +337,7 @@ CW and audio baseband are all correctly refused.
 | *"Classifier accuracy unmeasured"* | **Stale.** 97.7% synthetic, chance 25% |
 | *"Confidence: 96.4%"* | **Fabricated.** Was hardcoded and changed if you renamed the file. Deleted |
 | *"The modulation card reports a confidence of X"* | **There is no numeric confidence.** The card shows a **label** plus the provenance word `"measured"`, and discards the alternatives. `"measured"` means *from the signal, not the filename*, not *high confidence*. See §7 |
+| *"Confidence: measured"* (the label as it actually rendered) | **Same mistake, second time.** The fabricated percentage had been removed, but the word *Confidence* was left attached to a provenance string. Now reads **`Source: measured`**, and the field is named `modulation_source`. The real confidence figure is EVM, already shown in the demod card |
 | *"The CNN will make classification more accurate"* | **Unsupported as stated.** The demodulator-EVM classifier already scores 144/144 and refuses noise. The CNN's value is requirement coverage + a second opinion, not a measured accuracy gain |
 | *"Signal Detection & Segmentation"* (Notion) | **No code**, and PS §3 does not ask for it |
 | *Flask / MERN / Three.js* (Notion) | **None exist.** SIGMA is a PyQt5 desktop app |
@@ -351,8 +352,8 @@ Worth writing down because it is easy to misread the UI.
 plus the provenance word `"measured"`:
 
 ```
-modulation_class      = "BPSK"
-modulation_confidence = "measured"      # provenance, NOT a confidence value
+modulation_class  = "BPSK"
+modulation_source = "measured"      # provenance, NOT a confidence value
 ```
 
 `"measured"` means *"this came from the signal, not from the filename"*. It is a
@@ -360,6 +361,17 @@ real distinction — an earlier version returned hardcoded confidences whenever
 `"bpsk"`/`"qpsk"` appeared in the filename, so renaming a file changed the answer.
 That is fixed. But it is **not** a statement of how sure the classifier is, and
 it is not a percentage.
+
+> **The card used to print `Confidence: measured`.** That was the same mistake
+> twice: `docs/NOTION_RECONCILIATION.md` §3 had already removed a fabricated
+> `Confidence: 96.4%` from the page, and the rebuilt UI then reintroduced the
+> word attached to a *provenance* string. A number was gone; the misleading
+> label was not. The card now reads **`Source: measured`**, and the field was
+> renamed `modulation_confidence` → **`modulation_source`** (the old name is
+> kept as a read/write property alias so existing callers keep working).
+> The genuine confidence figure is **EVM**, and it is already displayed in the
+> demod card — removing the word removed no information. Guarded by
+> `scratch/verify_provenance_label.py`.
 
 **The other candidates are discarded, not ranked.** There is no `0.94 / 0.04 /
 0.01 / 0.01` anywhere in the shipped code. The app cannot report *"BPSK, but QPSK
@@ -395,8 +407,17 @@ new network. Showing the runner-up's EVM would make the margin visible.
 symbol rate lock → recover bits from **any of the four constellations**
 (BPSK/QPSK/8PSK at 100%, 16QAM at 99.98%) → show the bitstream.
 
-**Cannot be demoed:** de-interleaving, FEC, bit correlation, before/after-FEC
-bitstrings, automated report export.
+**Cannot be demoed:** before/after-FEC bitstrings side by side, automated report
+export, FSK, a trained CNN, and Reed-Solomon / LDPC.
+
+**Correction to an earlier version of this list:** de-interleaving, FEC decoding
+and bit correlation *are* now demoable and were previously listed here as not
+demoable. All three ship in `src/sigma_coding.py` and run on every analysis —
+the demodulated bitstream is passed to `analyse_coding_layer`, which searches for
+a sync word, names the interleaver, and Viterbi-decodes where a codeword is
+present. On a generated capture the card reports the interleaver and the decoded
+payload. The honest limit is that the **FEC scheme itself is an input, not a
+discovery** (§3 i) and the sync word must be **known** (§3 v) — see §3c.
 
 **The awkward fact:** the three real project captures all report `LOW`
 symbol-rate lock (6.3–7.0 dB over a 6 dB floor). The GUI gate requires `MEDIUM`
