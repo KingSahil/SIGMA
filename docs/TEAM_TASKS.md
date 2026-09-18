@@ -111,12 +111,26 @@ implement a Gardner / Müller & Müller detector for this**; no case needs one n
 (And do **not** attempt the zero-ISI-null approach — it was measured *worse* than
 taking the strongest spectral bin, 11/20 vs 14/20.)
 
-### A4. FSK demodulation — *medium*
+### A4. FSK demodulation — *medium; blocker resolved 2026-09-18*
 
-Not started. A discriminator (differentiate the phase) plus the existing timing
-search covers most of it, but the L2 classifier currently emits `"BPSK / 2-FSK"`
-as an *ambiguity* rather than distinguishing them. That needs resolving first, or
-FSK will never be selected.
+**The classifier blocker is solved.** The `"BPSK / 2-FSK"` ambiguity has a
+measured, reproducible resolution — a two-tone goodness-of-fit on the
+instantaneous-frequency distribution. At the project's real SNR it separates
+2-FSK (unexplained share **0.0000–0.2008**) from BPSK/QPSK/8PSK/16QAM/CW/noise
+(**0.3488–1.0000**) with no overlap, and **returns the tone deviation** the
+demodulator needs. Reproduce: `scratch/probe_fsk_snr_realistic.py`; full record
+in `docs/STATUS_DONE_VS_LEFT.md` §3c — including the four attempts that failed,
+so do not retry them.
+
+**What is left:** (a) put the estimator in the classifier behind its own
+verification sweep, (b) write the FSK demodulator — a tone-discriminator slicer,
+which the existing timing search then covers, (c) wire it into the GUI gate.
+The deviation is now an *output* of the estimator, so (b) no longer needs a
+separate search over tone spacing.
+
+Design note: FSK's constellation is a single-radius circle whose *rotation rate*
+carries the information, so it is unlikely to be separable by a
+constellation-image CNN — treat it as its own path, not a fifth CNN class.
 
 ---
 

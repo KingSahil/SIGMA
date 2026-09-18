@@ -35,7 +35,7 @@ signals where the answer is known by construction.
 | `scratch/verify_symbol_rate.py` | Symbol-rate accuracy vs known `R_s` |
 | `scratch/verify_demod.py` | Bit accuracy vs known transmitted bits |
 | `scratch/verify_wide.py` | 46-case sweep across modulation × rate × α × seed |
-| `scratch/run_all.py` | Runs all **17**. **This is the command you want.** |
+| `scratch/run_all.py` | Runs all **22**. **This is the command you want.** |
 | `scratch/fec_ground_truth.py` | `(2,1,3)` convolutional encode/decode + the four interleaver modes, with invertibility and burst proofs |
 | `scratch/verify_interleaver_detect.py` | Names the interleaver **blind** from the coded stream |
 | `scratch/verify_coding_module.py` | Scores the **shipped** `src/sigma_coding.py`, incl. the uncoded-refusal safety property |
@@ -44,6 +44,11 @@ signals where the answer is known by construction.
 | `scratch/verify_provenance_label.py` | The modulation card reports a **source**, not a confidence — all four provenance strings read back from the widget |
 | `scratch/fec_scheme_search.py` | PS §3 i ground truth: five codes recovered, the margin over the runner-up, and the control showing a bare argmin claims a scheme for 12/12 noise streams |
 | `scratch/verify_scheme_search.py` | The same against the **shipped** module + GUI, the fast path's blind spot (0/16), and the deep search that closes it (16/16 for K ≤ 7) |
+| `scratch/probe_fsk_vs_bpsk.py` | The FSK investigation's first attempt, kept as the record of its **own invalidity** — it claims BPSK shares the classifier branch, then refutes it |
+| `scratch/probe_fsk_feature_space.py` | Rate × modulation-index × seed sweep showing `f_std`'s ranges **overlap completely** between the two families |
+| `scratch/probe_fsk_phase_shape.py` | A two-tone feature that FAILED — overlap everywhere, and the value was quantised to the histogram bin width |
+| `scratch/probe_fsk_tone_fit.py` | Goodness-of-fit feature that failed at **noise levels far above the project's operating point**; its controls call QPSK two-tone |
+| `scratch/probe_fsk_snr_realistic.py` | The retest at the real operating point (~26–29 dB SNR) that **works**: 2-FSK 0.0000–0.2008 vs controls 0.3488–1.0000, and it recovers the tone deviation. Full record in `STATUS_DONE_VS_LEFT.md` §3c |
 | `scratch/verify_default_view.py` | Proves the GUI's *default* view completes the pipeline |
 | `scratch/verify_demod_panel.py` | Proves the DEMODULATION card shows real values, and the refusal shows a reason |
 | `scratch/measure_real_display.py` | Measures window/content fit on the **real** screen |
@@ -536,7 +541,7 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed) -- runs all 17 suites
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 22 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
 
 # Individual DSP suites

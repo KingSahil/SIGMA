@@ -309,6 +309,114 @@ different rate is not in the candidate set.
 
 ---
 
+## 3c. Resolving `"BPSK / 2-FSK"` — four wrong answers and one that works
+
+The spectral classifier emits `"BPSK / 2-FSK"` when it sees a constant envelope
+with high phase variance:
+
+```python
+elif amp_std < 0.12 and f_std > 0.4:
+    self.modulation_class = "BPSK / 2-FSK"
+```
+
+This is a **label naming two possibilities**, and §3 ii (FSK demodulation)
+cannot start until it is resolved — FSK is otherwise never selected.
+
+### What was claimed, and what was actually measured
+
+The opening hypothesis was that the two features *structurally cannot* separate
+BPSK from 2-FSK, because `amp_std < 0.12` is a **constant-envelope** test and
+both modulations are constant-envelope. **This is wrong, and the measurement
+says so.** For a properly built BPSK:
+
+| signal | `amp_std` | `f_std` | in the branch? |
+|---|---|---|---|
+| BPSK 100 ksps | **0.3968** | 0.5962 | **no** |
+| BPSK 50/100/200/400 ksps | 0.3961–0.5119 | 0.4656–1.3831 | **no** (all) |
+
+`amp_std` lands at 0.40–0.51, nowhere near the 0.12 gate. A real BPSK does not
+enter this branch at all. The constant-envelope story was a plausible-sounding
+argument that the numbers refuted — **stated here because it was stated
+confidently first.**
+
+### The real structural problem
+
+Sweeping rate × modulation index × seed shows the actual failure:
+
+| family | `f_std` range |
+|---|---|
+| BPSK | **0.4656 .. 1.3831** |
+| 2-FSK | **0.0483 .. 1.2570** |
+
+The ranges **overlap completely**. `f_std` is monotone in the modulation index,
+so a narrow-deviation 2-FSK produces a *smaller* phase deviation than any BPSK
+and a wide one a *larger*. The statistic mixes the two families across its whole
+range. Meanwhile a 2-FSK at a sufficient index *does* land in the BPSK branch
+(`h=4` at 100/200/400 ksps → `amp_std` 0.020, `f_std` 0.63–1.26) — which is
+exactly why the two-part label is honest and why it needs a third feature.
+
+### Three features that failed
+
+Recorded so they are not retried. Each was measured, and each failed for a
+different reason:
+
+| attempt | feature | why it failed |
+|---|---|---|
+| 1 | cluster separation / cluster width | saturates at **2.00** — a mechanical fixed point of the ratio, not a measurement |
+| 2 | absolute two-tone separation vs phase noise floor | **overlap at every rate and every noise level**; and the value was **quantised to the histogram bin width** (reported π/20, π/10, π/5 exactly) |
+| 3 | two-tone goodness-of-fit | controls called **QPSK two-tone**; and the noise levels tested (0.10/0.25) were **12–60 dB above this project's operating point** |
+
+Attempt 3 is worth dwelling on: `make_known` produces **~25.6 dB SNR** and a
+`make_fsk` at `h=4` **~29.4 dB**. Testing at `noise=0.25` meant adding noise 5×
+the RMS signal level. Every "not separable" verdict from that sweep was a
+measurement of the noise, not of the modulation.
+
+### The estimator that works
+
+Retested at the **project's actual operating point** (`noise=0.02`, ~26–29 dB
+SNR), fit a **two-tone model** to the instantaneous-frequency distribution and
+report the fraction of samples it cannot explain:
+
+| family | unexplained share |
+|---|---|
+| **2-FSK** (rate × index × seed, 34 cases) | **0.0000 .. 0.2008** |
+| BPSK / QPSK / 8PSK / 16QAM / CW / noise (18 controls) | **0.3488 .. 1.0000** |
+
+Gap **0.1480**, no overlap. The measured tone spacing also **tracks the true
+spacing** across the entire sweep (`0.3150` vs `0.3142` true; `1.2517` vs
+`1.2566`), so the same estimator supplies the deviation the demodulator would
+need — not just a yes/no.
+
+Worst cases on each side, stated plainly:
+
+* hardest 2-FSK to resolve: `h=1.00` @ 50 ksps → **0.2008**
+* easiest control to misjudge: noise → **0.3488**
+
+> **A bound from best cases is not a bound.** A draft of this harness took the
+> midpoint between the *best* 2-FSK (0.0000) and the *worst* control (1.0000) and
+> printed a threshold of **0.0010**. That is the wrong side of honest — the
+> margin has to be measured between the **worst case of each family**, which
+> gives **0.2748**. The corrected figure is the one above.
+
+### Where the estimator gives up
+
+At **`h ≤ 0.5`** the two tones are close enough that a 2-FSK is spectrally near
+a CW carrier. Those cases sit nearest the control floor and are the region a
+shipped classifier should **abstain** on rather than decide — which is why the
+threshold must clear 0.2008 and must not be set at 0.05.
+
+### Status: measured, not yet shipped
+
+The estimator is **measured and reproducible** (`scratch/probe_fsk_snr_realistic.py`)
+but **is not in the classifier**. Adding it would require re-running the full
+modulation-classification suite against the new branch, and the threshold is
+calibrated on clean synthetic signals — real captures are narrower than a
+synthetic sweep. **This is the honest position: the blocker is solved on paper
+with numbers; the classifier still says `"BPSK / 2-FSK"`, and FSK demodulation
+is still not implemented.**
+
+---
+
 ## 5. What is left, in priority order
 
 ### Tier 1 — ~~cheap, unblocks other work~~ **ALL THREE DONE**
@@ -368,7 +476,7 @@ CW and audio baseband are all correctly refused.
 |---|---|---|---|
 | 4 | ~~**Timing detector** (Gardner / Müller & Müller)~~ | — | ✅ **No longer needed for α=0.20.** The full sweep is now **72/72 locked, 0 refused**, including every α=0.20 case. The old 6 `NO DEMOD` failures were the carrier-estimate defects in Tier 1, not the timing phase search. Do **not** reach for the zero-ISI-null approach: measured *worse* (11/20 vs 14/20) |
 | 5 | **Train the CNN** | medium | Dataset + baseline already built. Needs ~40 lines of network |
-| 6 | **FSK demodulation** | medium | Not started. Must first resolve the `"BPSK / 2-FSK"` classifier ambiguity or FSK is never selected |
+| 6 | **FSK demodulation** | medium | **Blocker solved 2026-09-18; demodulator itself not written.** The `"BPSK / 2-FSK"` ambiguity is resolved — see the §3c note below. What remains is the FSK demodulator (a tone-discriminator slicer) and wiring it into the gate. Estimated small-to-medium now that the identifying feature is measured and reproducible |
 | 7 | **Wire CNN into the gate** + keep heuristic as cross-check | medium | Depends on 5. Note the demodulator-based classifier (Tier 1b) already covers all four constellations at 144/144, so the CNN's marginal value is now **robustness on real signals**, not basic capability |
 
 ### Tier 3 — the two unstarted problem-statement sections

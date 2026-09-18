@@ -412,6 +412,28 @@ class SignalMetadata:
                     self.modulation_class = "AM / ASK"
                     self.modulation_source = "measured"
                 elif amp_std < 0.12 and f_std > 0.4:
+                    # A NAME FOR TWO POSSIBILITIES, and that is deliberate.
+                    # Measured (scratch/probe_fsk_feature_space.py), this branch
+                    # is reachable by both families:
+                    #   2-FSK at h=4 @100k, h=2 @200k, h=1 @400k
+                    #       -> amp_std 0.0198-0.0200, f_std 0.6288-0.6291  YES
+                    #   a real BPSK does NOT reach it -- its amp_std is
+                    #       0.3961-0.5119, far above the 0.12 gate.
+                    # So the branch is entered in practice by wide-deviation
+                    # 2-FSK, and "BPSK" is named because a BPSK slice is the
+                    # reading that can still resolve it. `f_std` alone cannot
+                    # separate the families: its ranges overlap completely
+                    # (BPSK 0.4656-1.3831, 2-FSK 0.0483-1.2570) because it is
+                    # monotone in the modulation index.
+                    #
+                    # The resolution is MEASURED but NOT YET WIRED IN: a
+                    # two-tone goodness-of-fit on the instantaneous-frequency
+                    # distribution separates them with no overlap at the
+                    # project's real SNR (2-FSK 0.0000-0.2008 vs every control
+                    # 0.3488-1.0000) and returns the tone deviation.
+                    # Do not add it here without re-running
+                    # verify_modclass_parsimony.py and verify_gui_all_mods.py --
+                    # see docs/STATUS_DONE_VS_LEFT.md section 3c.
                     self.modulation_class = "BPSK / 2-FSK"
                     self.modulation_source = "measured"
                 else:

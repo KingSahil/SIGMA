@@ -67,6 +67,36 @@ verify_provenance_label.py    the modulation card must report a SOURCE, not a
                               confidence figure (EVM) is still shown in the
                               demod card.
 
+Added for PS section 3 (ii), FSK -- these are PROBES, not verification suites.
+They are in this list because they run and exit 0, and because the negative
+results they record are the reason no classifier change was made. Read them
+before proposing a feature for BPSK/2-FSK:
+
+probe_fsk_vs_bpsk.py          the FIRST attempt, and the record of its own
+                              invalidity. Claimed BPSK and 2-FSK share the
+                              classifier's branch signature; REFUTED -- a
+                              properly built BPSK has amp_std 0.40-0.51, far
+                              from the 0.12 gate.
+probe_fsk_feature_space.py    rate x modulation-index x seed sweep. Found the
+                              real problem: f_std ranges OVERLAP completely
+                              (BPSK 0.47..1.38, 2-FSK 0.05..1.26) because f_std
+                              is monotone in the modulation index.
+probe_fsk_phase_shape.py      two-tone separation vs phase noise floor. FAILED
+                              twice over: overlap at every rate/noise, and the
+                              statistic was QUANTISED to the histogram bin
+                              width (reported pi/20, pi/10, pi/5 exactly).
+probe_fsk_tone_fit.py         two-tone goodness-of-fit. Failed at the NOISE
+                              LEVELS IT TESTED (0.10/0.25 are 12-60 dB above
+                              this project's operating point) and its controls
+                              called QPSK two-tone.
+probe_fsk_snr_realistic.py    the retest at the project's ACTUAL operating
+                              point (~26-29 dB SNR). This one WORKS: 2-FSK
+                              unexplained share 0.0000..0.2008, every control
+                              0.3488..1.0000, and the measured tone spacing
+                              tracks the true spacing across the whole sweep.
+                              Establishes the candidate threshold and the
+                              reference implementation the classifier would use.
+
 Added for PS section 3 (i), blind FEC-scheme identification:
 fec_scheme_search.py          the ground-truth experiment. Recovers five
                               standard rate-1/2 codes from their own encodings,
@@ -108,6 +138,11 @@ SCRIPTS = [
     "verify_provenance_label.py",
     "fec_scheme_search.py",
     "verify_scheme_search.py",
+    "probe_fsk_vs_bpsk.py",
+    "probe_fsk_feature_space.py",
+    "probe_fsk_phase_shape.py",
+    "probe_fsk_tone_fit.py",
+    "probe_fsk_snr_realistic.py",
 ]
 
 

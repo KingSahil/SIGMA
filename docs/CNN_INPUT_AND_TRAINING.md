@@ -393,9 +393,18 @@ otherwise "no model installed" becomes "app will not start". Wrap the import in
    captures are overwhelmingly unmodulated or noise. Expect a real deployment to  
    need a "none of the above" class.
 4. **Only four classes.** PS §3 also asks for FSK. FSK is not demoduable yet  
-   (`TEAM_TASKS.md` §3 A4), so it cannot be in the dataset — and the L2  
-   classifier currently emits `"BPSK / 2-FSK"` as an ambiguity. Resolve FSK  
-   before claiming PSK+FSK classification.
+   (`TEAM_TASKS.md` §3 A4), so it cannot be in the dataset. The L2 classifier  
+   still emits `"BPSK / 2-FSK"` as an ambiguity — **but the identifying feature  
+   is now measured and reproducible** (see `STATUS_DONE_VS_LEFT.md` §3c): a  
+   two-tone fit separates 2-FSK (unexplained 0.0000–0.2008) from every control  
+   (0.3488–1.0000) at the project's real SNR, and returns the tone deviation  
+   too. Resolve FSK end-to-end before claiming PSK+FSK classification.
+5. **FSK as a CNN class is a design question worth stating.** FSK's  
+   constellation collapses to a circle of ONE radius whose *rotation rate*  
+   carries the information, so a constellation-density image may not separate  
+   2-FSK from CW — unlike the PSK/QAM classes where the constellation is the  
+   signal. If FSK is added, it likely wants the tone-spacing feature, not the  
+   image.
 5. **360 samples is small.** It proved the *features* work. It is not enough to  
    train a production classifier — the target should be several thousand, which  
    is minutes of generation time.

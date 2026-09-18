@@ -1302,6 +1302,15 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         # demodulator's own lock decide -- it is the thing that actually knows
         # whether the bits came out, and it declines on its own if they did not.
         #
+        # MEASURED, so a wide-deviation 2-FSK genuinely can arrive here:
+        # 2-FSK at h>=1 reaches this branch (amp_std ~0.020, f_std ~0.63),
+        # while a real BPSK does not (amp_std 0.40-0.51). A two-tone
+        # goodness-of-fit resolves them with no overlap at this project's SNR
+        # and also returns the tone deviation -- but it is NOT wired in yet, so
+        # for now a 2-FSK capture reaching here will be tried as BPSK and
+        # declined if it does not lock. That is the honest current limit; see
+        # docs/STATUS_DONE_VS_LEFT.md section 3c.
+        #
         # Order matters. A combined label such as "QPSK / 8PSK" names two
         # candidates, and the same parsimony that resolves the EVM tie applies:
         # prefer the constellation with fewer points, so test ascending by
