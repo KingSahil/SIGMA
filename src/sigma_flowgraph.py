@@ -99,7 +99,7 @@ class SigmaFlowgraph(gr.top_block):
         self.time_sink.set_line_width(0, 1)
 
         self.time_sink.set_line_label(1, "Q")
-        self.time_sink.set_line_color(1, "magenta")
+        self.time_sink.set_line_color(1, "orange")
         self.time_sink.set_line_width(1, 1)
 
         # Frequency Sink (FFT / Spectrum)
