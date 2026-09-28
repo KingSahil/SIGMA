@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SIGMAModulationSchema",
+  "description": "Schema for digital and analog modulation classification results",
+  "type": "object",
+  "properties": {
+    "identified_class": { "type": "string" },
+    "candidate_classes": { "type": "array", "items": { "type": "string" } },
+    "source_type": { "type": "string", "enum": ["measured", "indeterminate", "filename hint, unverified"] },
+    "order": { "type": ["integer", "null"] },
+    "sps": { "type": ["number", "null"] },
+    "evm_percent": { "type": ["number", "null"] },
+    "carrier_offset_hz": { "type": ["number", "null"] }
+  },
+  "required": ["identified_class", "source_type"]
+}

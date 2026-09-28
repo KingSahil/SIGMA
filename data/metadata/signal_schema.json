@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SIGMASignalMetadataSchema",
+  "description": "Schema for physical RF signal recordings and telemetry",
+  "type": "object",
+  "properties": {
+    "filename": { "type": "string" },
+    "file_format": { "type": "string", "enum": ["RAW_IQ_FC32", "STEREO_IQ_WAV", "MONO_AUDIO_WAV"] },
+    "sample_rate": { "type": "number", "minimum": 1.0 },
+    "center_frequency": { "type": "number" },
+    "bandwidth_99_hz": { "type": ["number", "null"] },
+    "snr_db": { "type": ["number", "null"] },
+    "noise_floor_dbfs": { "type": ["number", "null"] },
+    "symbol_rate": { "type": ["number", "null"] },
+    "samples_per_symbol": { "type": ["number", "null"] },
+    "modulation": { "type": "string" },
+    "fec": { "type": "string" },
+    "interleaving": { "type": "string" },
+    "source_type": { "type": "string", "enum": ["SYNTHETIC TEST DATA", "RECORDED RF CAPTURE", "GROUND TRUTH"] }
+  },
+  "required": ["filename", "file_format", "sample_rate", "source_type"]
+}

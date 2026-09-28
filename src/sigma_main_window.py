@@ -567,7 +567,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_time.setProperty("class", "SectionTitle")
         h_time.addWidget(t_time)
 
-        self.hud_time = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_time = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_time.setProperty("class", "HudOverlayBadge")
         h_time.addWidget(self.hud_time)
 
@@ -592,7 +592,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_freq.setProperty("class", "SectionTitle")
         h_freq.addWidget(t_freq)
 
-        self.hud_freq = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_freq = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_freq.setProperty("class", "HudOverlayBadge")
         h_freq.addWidget(self.hud_freq)
 
@@ -625,7 +625,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_wf.setProperty("class", "SectionTitle")
         h_wf.addWidget(t_wf)
 
-        self.hud_wf = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_wf = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_wf.setProperty("class", "HudOverlayBadge")
         h_wf.addWidget(self.hud_wf)
 
@@ -650,7 +650,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_const.setProperty("class", "SectionTitle")
         h_const.addWidget(t_const)
 
-        self.hud_const = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_const = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_const.setProperty("class", "HudOverlayBadge")
         h_const.addWidget(self.hud_const)
 

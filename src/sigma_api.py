@@ -1081,6 +1081,190 @@ async def api_fec_decode(req: FECRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# ==============================================================================
+# 5. NEW SIH RECOVERY & INTELLIGENCE API ENDPOINTS
+# ==============================================================================
+
+# In-memory storage for analysis results
+ANALYSIS_CACHE: Dict[str, Any] = {}
+
+
+class DemodulateRequest(BaseModel):
+    samples_i: Optional[List[float]] = None
+    samples_q: Optional[List[float]] = None
+    sample_rate: float = 1000000.0
+    modulation: str = "BPSK"
+    symbol_rate: Optional[float] = None
+    sps: Optional[float] = None
+
+
+class DeinterleaveRequest(BaseModel):
+    bits: List[int]
+    mode: str = "block"
+    parameters: Optional[Dict[str, Any]] = None
+
+
+class FECDecodeRequest(BaseModel):
+    bits: List[int]
+    fec_type: Optional[str] = "convolutional"
+    parameters: Optional[Dict[str, Any]] = None
+
+
+class CorrelateRequest(BaseModel):
+    bits_a: List[int]
+    bits_b: Optional[List[int]] = None
+    sync_patterns: Optional[Dict[str, Any]] = None
+
+
+class RecoverRequest(BaseModel):
+    filepath: Optional[str] = None
+    sample_rate: Optional[float] = 1000000.0
+    center_freq: float = 0.0
+    forced_modulation: Optional[str] = None
+    interleave_mode: Optional[str] = None
+    fec_type: Optional[str] = None
+
+
+@app.post("/analyze", summary="Analyze IQ or WAV Signal File")
+async def post_analyze(
+    file: Optional[UploadFile] = File(None),
+    filepath: Optional[str] = Form(None),
+    sample_rate: float = Form(1000000.0),
+    center_freq: float = Form(0.0)
+):
+    import uuid
+    from sigma_analyzer_core import SignalMetadata
+
+    target_path = filepath
+    if file is not None:
+        save_name = f"{uuid.uuid4().hex}_{file.filename}"
+        target_path = os.path.join(UPLOAD_FOLDER, save_name)
+        with open(target_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+    if not target_path or not os.path.exists(target_path):
+        raise HTTPException(status_code=400, detail="Valid file or filepath is required")
+
+    meta = SignalMetadata(filepath=target_path, samp_rate=sample_rate, center_freq=center_freq)
+    aid = uuid.uuid4().hex[:12]
+    res_dict = {
+        "analysis_id": aid,
+        "filename": meta.filename,
+        "sample_rate": meta.samp_rate,
+        "center_freq": meta.center_freq,
+        "snr": meta.snr,
+        "noise_floor": meta.noise_floor,
+        "signal_power": meta.signal_power_dbfs,
+        "peak_frequency": meta.peak_frequency,
+        "symbol_rate": meta.symbol_rate,
+        "samples_per_symbol": meta.samples_per_symbol,
+        "modulation_class": meta.modulation_class,
+        "modulation_source": meta.modulation_source,
+    }
+    ANALYSIS_CACHE[aid] = res_dict
+    return res_dict
+
+
+@app.post("/demodulate", summary="Demodulate Signal Samples")
+async def post_demodulate(req: DemodulateRequest):
+    from recovery.demodulators import demodulate
+
+    if not req.samples_i or not req.samples_q:
+        raise HTTPException(status_code=400, detail="samples_i and samples_q are required")
+
+    i_arr = np.asarray(req.samples_i, dtype=np.float32)
+    q_arr = np.asarray(req.samples_q, dtype=np.float32)
+    iq_signal = (i_arr + 1j * q_arr).astype(np.complex64)
+
+    out = demodulate(
+        iq_signal,
+        modulation=req.modulation,
+        sample_rate=req.sample_rate,
+        symbol_rate=req.symbol_rate,
+        sps=req.sps,
+    )
+    return out
+
+
+@app.post("/deinterleave", summary="De-interleave Bitstream")
+async def post_deinterleave(req: DeinterleaveRequest):
+    from deinterleaving.dispatcher import deinterleave
+
+    out = deinterleave(req.bits, mode=req.mode, parameters=req.parameters)
+    return out
+
+
+@app.post("/fec/decode", summary="Decode Bitstream with Forward Error Correction")
+async def post_fec_decode(req: FECDecodeRequest):
+    from fec.dispatcher import decode_fec
+
+    out = decode_fec(req.bits, fec_type=req.fec_type, parameters=req.parameters)
+    return out
+
+
+@app.post("/correlate", summary="Correlate Bitstream & Find Headers")
+async def post_correlate(req: CorrelateRequest):
+    from correlation.scoring import correlate_bitstreams
+
+    out = correlate_bitstreams(
+        req.bits_a,
+        stream_b=req.bits_b,
+        sync_patterns=req.sync_patterns
+    )
+    return out
+
+
+@app.post("/recover", summary="Run Full End-to-End Recovery Pipeline")
+async def post_recover(
+    file: Optional[UploadFile] = File(None),
+    filepath: Optional[str] = Form(None),
+    sample_rate: float = Form(1000000.0),
+    center_freq: float = Form(0.0),
+    modulation: Optional[str] = Form(None),
+    interleave_mode: Optional[str] = Form(None),
+    fec_type: Optional[str] = Form(None),
+):
+    import uuid
+    from sigma_recovery import orchestrate_signal_recovery
+
+    target_path = filepath
+    if file is not None:
+        save_name = f"{uuid.uuid4().hex}_{file.filename}"
+        target_path = os.path.join(UPLOAD_FOLDER, save_name)
+        with open(target_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+    if not target_path or not os.path.exists(target_path):
+        # Default fallback to demo file if none provided
+        demo_candidate = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "iq", "demo_bpsk_100ksps_1msps.iq")
+        if os.path.exists(demo_candidate):
+            target_path = demo_candidate
+        else:
+            raise HTTPException(status_code=400, detail="File or valid filepath required")
+
+    result = orchestrate_signal_recovery(
+        input_path=target_path,
+        user_sample_rate=sample_rate,
+        user_center_freq=center_freq,
+        forced_modulation=modulation,
+        interleave_mode=interleave_mode,
+        fec_type=fec_type,
+    )
+
+    aid = uuid.uuid4().hex[:12]
+    out_dict = result.to_dict()
+    out_dict["analysis_id"] = aid
+    ANALYSIS_CACHE[aid] = out_dict
+    return out_dict
+
+
+@app.get("/analysis/{analysis_id}", summary="Get Stored Analysis Result")
+async def get_analysis(analysis_id: str):
+    if analysis_id not in ANALYSIS_CACHE:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    return ANALYSIS_CACHE[analysis_id]
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
