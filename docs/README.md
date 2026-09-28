@@ -32,14 +32,23 @@ SIGMA is an RF signal intelligence workstation and real-time visualization platf
 | :---------------------------- | :-------------------- | :---------------------------------------------------------------------- |
 | 1. INPUT                      | ✅ Done                | File ingestion, WAV→IQ conversion                                       |
 | 2. ANALYSIS                   | ✅ Done                | Real metrics, no mock values                                            |
-| 3. MODULATION                 | ✅ Done                | Symbol rate **10/10 locked**, PSK order from the M-th power test, filename-independent |
-| 4. DEMOD                      | ✅ Done, quality-gated | **46/46 at 100.00%** bit accuracy                                       |
+| 3. MODULATION                 | ✅ Done                | Symbol rate **10/10 locked**; constellation named for all four (**144/144**), filename-independent |
+| 4. DEMOD                      | ✅ Done, quality-gated | **72/72 locked, 0 refused**; BPSK/QPSK/8PSK **100.00%**, 16QAM **99.98%** |
 | 5. BITS                       | ✅ Done, quality-gated | 6000 bits recovered in the GUI on the demo capture                      |
 | Sampling-frequency estimation | ⚠️ **Impossible; resolved not measured** | `f_s` has no observable in the samples. Resolved by `sigma_sample_rate.py` with ranked provenance, shown in the GUI |
-| CNN modulation classifier     | 🟡 **Features + dataset done, model not trained** | **97.7%** on 360 generated captures (chance 25%) via `scratch/train_baseline_model.py`. No ML framework installed yet. See [CNN_INPUT_AND_TRAINING.md](CNN_INPUT_AND_TRAINING.md) |
-| 16QAM demodulation            | 🟢 **Works, gate blocks it** | **99.98%** bit accuracy measured; the GUI gate refuses it |
-| 8PSK demodulation             | 🔴 **Broken, cause known** | 51.70% (random). Cause: carrier recovery exponent hardcoded to `x⁴` |
+| CNN modulation classifier     | 🟡 **Features + dataset done, model not trained** | **97.7%** on 360 generated captures (chance 25%) via `scratch/train_baseline_model.py`. Framework proven installable but **not wired into the app**. **Its value is requirement coverage + a cross-check, not accuracy** — the demodulator-EVM classifier already scores 144/144. See [CNN_INPUT_AND_TRAINING.md](CNN_INPUT_AND_TRAINING.md) |
+| 16QAM demodulation            | ✅ **Done**            | **99.98%** bit accuracy; the GUI gate now routes it |
+| 8PSK demodulation             | ✅ **Fixed**           | 51.70% (random) → **100.00%**. Cause was the carrier exponent hardcoded to `x⁴`; it is now per-constellation |
 | De-interleaving, FEC          | ❌ Not started         | Required by the problem statement                                       |
+
+> **On the modulation card:** it shows a **label plus the provenance word
+> `"measured"`** — not a numeric confidence, and not the runner-up class.
+> `"measured"` means *from the signal, not the filename*, which is a real fix
+> (an earlier version returned hardcoded confidences driven by the filename) but
+> is **not** a statement of how sure the classifier is. The actual confidence is
+> the **EVM**, shown after demodulation, e.g. *"8PSK is the simplest that fits
+> (EVM 3.3%; the classifier said BPSK)"*. Full detail:
+> [STATUS_DONE_VS_LEFT.md](STATUS_DONE_VS_LEFT.md) §7.
 
 "Quality-gated" means the stage refuses to run when the symbol-rate lock is  
 untrustworthy, and explains why in the UI tooltip. Refusing is the correct  
@@ -73,7 +82,7 @@ behaviour: a bitstream sampled on the wrong clock looks valid and is not.
 
 - **Truth-in-Metrics Core**: All physical DSP metrics (RMS amplitude, peak amplitude, dBFS power, peak frequency, 99% OBW, noise floor, SNR, symbol rate, and modulation class) are computed from real sample data using NumPy — no mocked values, and no fabricated confidence percentages.
 - **Complete 5-Stage Pipeline**: Input → Analysis → Modulation → **Demodulation** → **Bitstream**. Symbol rate measured from envelope cyclostationarity; carrier recovery, RRC matched filtering, and symbol timing in `sigma_demod.py`.
-- **Verified Against Ground Truth**: Symbol rate 10/10 locked (9 at 0.00% error); demodulation **46/46 configurations at exactly 100.00% bit accuracy, BER 0.0000**. See [`VERIFICATION.md`](VERIFICATION.md).
+- **Verified Against Ground Truth**: Symbol rate 10/10 locked (9 at 0.00% error); demodulation **72/72 configurations locked, 0 refused** — BPSK/QPSK/8PSK at 100.00%, 16QAM at 99.98%. See [`VERIFICATION.md`](VERIFICATION.md).
 - **Honest Refusal Over Plausible Nonsense**: When the symbol-rate lock is too weak, stages 4–5 decline and explain why in the tooltip, rather than emitting a bitstream sampled on a clock it does not trust.
 - **Four Real-Time GNU Radio Sinks**: Time Domain, Frequency Spectrum (FFT), Waterfall (spectrogram), and Constellation Diagram — all in a 2×2 resizable grid.
 - **View Mode Switcher + HUD Overlay**: Five toggle buttons collapse the 2×2 grid into a single full-resolution sink. Interactive click/drag on any plot shows live coordinate readouts.

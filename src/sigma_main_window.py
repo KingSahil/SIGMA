@@ -17,6 +17,7 @@ try:
     from .sigma_analyzer_core import SignalMetadata, load_and_convert_wav
     from .sigma_flowgraph import SigmaFlowgraph
     from .sigma_demod import format_bitstream_summary
+    from .sigma_coding import analyse_coding_layer
     from .sigma_sample_rate import (
         resolve_sample_rate_file, format_sample_rate, format_sample_rate_source,
     )
@@ -25,6 +26,7 @@ except ImportError:
     from sigma_analyzer_core import SignalMetadata, load_and_convert_wav
     from sigma_flowgraph import SigmaFlowgraph
     from sigma_demod import format_bitstream_summary
+    from sigma_coding import analyse_coding_layer
     from sigma_sample_rate import (
         resolve_sample_rate_file, format_sample_rate, format_sample_rate_source,
     )
@@ -865,7 +867,14 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.lbl_mod_class.setWordWrap(True)
         box_lay.addWidget(self.lbl_mod_class)
 
-        self.lbl_mod_conf = QtWidgets.QLabel("Confidence: --")
+        # NOTE: this line reports PROVENANCE, not a confidence level. The
+        # string it displays is "measured" (derived from the signal itself),
+        # "indeterminate" (no class fit), or "filename hint, unverified".
+        # None of those is a probability, so the label must not say
+        # "Confidence:" -- that would invite the reader to treat a source as a
+        # score. The real, physical confidence figure is EVM, shown in the
+        # DEMODULATION card once the signal is demodulated.
+        self.lbl_mod_conf = QtWidgets.QLabel("Source: --")
         self.lbl_mod_conf.setProperty("class", "BigModulationConfidence")
         box_lay.addWidget(self.lbl_mod_conf)
 
@@ -920,6 +929,23 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.lbl_demod_reason.setWordWrap(True)
         self.lbl_demod_reason.setVisible(False)
         dm_lay.addWidget(self.lbl_demod_reason)
+
+        # Row 3b -- PS section 3 (i). The fast coding pass runs on every load
+        # and probes the interleaver with the default code only, so a stream
+        # that is both coded with a NON-default code AND interleaved is not
+        # identified. This action re-runs the coding layer probing with each
+        # candidate code. It is explicit rather than automatic because it costs
+        # roughly 1.4 s per stream (measured), against ~0.1 s for the fast pass.
+        self.btn_deep_search = QtWidgets.QPushButton("Deep code search")
+        self.btn_deep_search.setProperty("class", "DeepSearchBtn")
+        self.btn_deep_search.setToolTip(
+            "Re-analyse the recovered bits, probing each candidate "
+            "convolutional code as the interleaver assumption.\n"
+            "Finds a code+interleaver combination the fast pass cannot see. "
+            "Slower: about 1.4 s on a 200-bit stream.")
+        self.btn_deep_search.clicked.connect(self.run_deep_coding_search)
+        self.btn_deep_search.setEnabled(False)
+        dm_lay.addWidget(self.btn_deep_search)
 
         # Row 4 -- the actual recovered bits
         t_bits = QtWidgets.QLabel("RECOVERED BITSTREAM (first bits)")
@@ -1096,7 +1122,8 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
         # Modulation
         self.lbl_mod_class.setText(m.modulation_class)
-        self.lbl_mod_conf.setText(f"Confidence: {m.modulation_confidence}")
+        # Provenance, not confidence -- see the note where this label is built.
+        self.lbl_mod_conf.setText(f"Source: {m.modulation_confidence}")
 
         self._run_demod_stage()
 
@@ -1116,6 +1143,108 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             w.style().unpolish(w)
             w.style().polish(w)
 
+    def _run_coding_analysis(self, deep=False):
+        """Run the coding-layer analysis over the last recovered bits.
+
+        Split out from the demod stage so the deep search can be re-run on the
+        same bits without repeating demodulation, which is the expensive part.
+
+        `deep=True` runs the joint code x interleaver search. It costs roughly
+        1.4 s per stream (measured) because each candidate code is used as the
+        interleaver probe, and it is the only way to identify a stream that is
+        both coded with a non-default code AND interleaved. Returns the
+        CodingResult, or None when it could not run.
+        """
+        bits = getattr(self, "_last_bits", None)
+        if bits is None or len(bits) == 0:
+            return None
+        try:
+            coding = analyse_coding_layer(bits, deep_search=deep)
+            self.coding_result = coding
+            return coding
+        except Exception as ce:
+            print(f"[SIGMA] Coding-layer analysis skipped: {ce}")
+            self.coding_result = None
+            return None
+
+    def run_deep_coding_search(self):
+        """Re-run the coding layer with the joint code x interleaver search.
+
+        Bound to the card's "Deep search" action. Deliberately explicit: the
+        fast path already runs on every load, and this only adds the cases the
+        fast path cannot resolve, at a real time cost.
+        """
+        if getattr(self, "_last_bits", None) is None:
+            return
+        # The deep search is slow enough that a second click while it runs
+        # would queue another 1.4 s of work behind this one.
+        self.btn_deep_search.setEnabled(False)
+        self._reset_demod_panel("DEEP SEARCH", reason=None)
+        QtWidgets.QApplication.processEvents()
+        try:
+            coding = self._run_coding_analysis(deep=True)
+            if coding is None:
+                self._reset_demod_panel("DEEP SEARCH",
+                                        "no bitstream to re-analyse")
+                return
+            # Re-render from the stored demod result, no re-demodulation.
+            if self.demod_result is not None:
+                self._render_demod_card(self.demod_result, coding)
+        finally:
+            self.btn_deep_search.setEnabled(
+                getattr(self, "_last_bits", None) is not None)
+
+    def _render_demod_card(self, res, coding):
+        """Render the DEMODULATION card from a demod result and its coding layer.
+
+        Shared by the normal load path and the deep-search re-run, so the two
+        cannot drift apart -- a re-run that rendered differently from the first
+        pass would make the deep search's output untrustworthy.
+        """
+        self.lbl_demod_state.setText("LOCKED")
+        self.lbl_demod_state.setProperty("class", "DemodValue")
+        self.lbl_demod_method.setText(
+            f"{res.modulation}  \u00b7  RRC matched filter")
+        resid_txt = (f"{res.residual_freq_hz:+,.1f} Hz"
+                     if res.residual_freq_hz is not None else "--")
+        coding_txt = "--"
+        header_txt = "--"
+        scheme_txt = ""
+        if coding is not None and coding.analysed:
+            if coding.had_fec:
+                coding_txt = (f"FEC {coding.interleaver or 'none'}"
+                              f" (residual {coding.residual:.3f})")
+            else:
+                coding_txt = "not present"
+            # PS section 3 (i). The code is identified from the stream rather
+            # than assumed, so report which one was found -- and report a
+            # refusal as a refusal rather than leaving it blank.
+            if coding.fec_scheme:
+                scheme_txt = (f"      Code: {coding.fec_scheme}"
+                              + (" (deep search)" if coding.deep_search else ""))
+            elif coding.fec_scheme_source == "searched":
+                scheme_txt = "      Code: none identified"
+            # PS section 3 (v). An empty result is the normal outcome for
+            # unframed traffic, so say so rather than leaving a blank.
+            if coding.sync_hits:
+                off, err = coding.sync_hits[0]
+                header_txt = f"bit {off} ({err} err)"
+                if len(coding.sync_hits) > 1:
+                    header_txt += f" +{len(coding.sync_hits) - 1}"
+            elif coding.sync_detectable is None:
+                header_txt = "not decidable at this length"
+            else:
+                header_txt = "none found"
+        self.lbl_demod_stats.setText(
+            f"Symbols: {res.n_symbols}      Bits: {len(res.bits)}      "
+            f"EVM: {res.evm_percent:.1f}%\n"
+            f"Carrier offset: {res.carrier_offset_hz:+,.0f} Hz      "
+            f"Residual tracked: {resid_txt}      "
+            f"SPS used: {res.sps:.2f}\n"
+            f"Coding: {coding_txt}{scheme_txt}      Header: {header_txt}"
+        )
+        self.lbl_demod_reason.setVisible(False)
+
     def _run_demod_stage(self):
         """Run demodulation on the loaded capture and update the pipeline steps.
 
@@ -1128,6 +1257,9 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         m = self.metadata
         sr = getattr(m, "symbol_rate_result", None)
         self.demod_result = None
+        self.coding_result = None
+        self._last_bits = None
+        self.btn_deep_search.setEnabled(False)
 
         # Reset to pending, then promote only on real success.
         self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=False)
@@ -1152,38 +1284,34 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             self._reset_demod_panel("DECLINED", reason)
             return
 
-        # Which demodulator to run.
+        # Which constellation to slice against.
         #
-        # "BPSK / 2-FSK" is an ambiguity in the *classifier*, not a disagreement
+        # The spectral classifier can only name BPSK and QPSK: its M-th power
+        # order detector is deliberately conservative, and 8PSK/16QAM are not
+        # separable that way. Measured on known signals, 8PSK's strongest line
+        # is at x^2 rather than x^8, so the spectral route calls an 8PSK capture
+        # BPSK. When it has no usable name, ask the demodulator instead --
+        # demodulating under each constellation and keeping the simplest that
+        # explains the symbols identifies all four (verified 144/144, with
+        # noise correctly refused rather than guessed).
+        #
+        # "BPSK / 2-FSK" is an ambiguity in the classifier, not a disagreement
         # with the demodulator: it fires on the signature of BPSK (constant
         # envelope, high phase variance after differencing), which is precisely
-        # what a BPSK demodulator can resolve. The old test
-        # `"BPSK" in mod or "QPSK" in mod` excluded the QPSK half of a
-        # "QPSK / something" label too. Try the PSK reading and let the
+        # what a BPSK demodulator can resolve. Try the PSK reading and let the
         # demodulator's own lock decide -- it is the thing that actually knows
         # whether the bits came out, and it declines on its own if they did not.
         #
-        # Order matters: QPSK must be tested first, because "QPSK" contains no
-        # "BPSK" but a label could name both.
+        # Order matters. A combined label such as "QPSK / 8PSK" names two
+        # candidates, and the same parsimony that resolves the EVM tie applies:
+        # prefer the constellation with fewer points, so test ascending by
+        # size. Note "8PSK" contains neither "QPSK" nor "BPSK".
         mod = m.modulation_class or ""
-        if "QPSK" in mod:
-            label = "QPSK"
-        elif "BPSK" in mod:
-            label = "BPSK"
-        elif "PSK" in mod:
-            # "Digital PSK/FSK", "8PSK"... not a modulation we can slice.
-            reason = (f"Detected {mod}; the demodulator handles the PSK "
-                      f"constellations it can slice (BPSK, QPSK). Declined "
-                      f"rather than guessing a constellation order.")
-            self.lbl_demod.setToolTip(reason)
-            self._reset_demod_panel("UNSUPPORTED", reason)
-            return
-        else:
-            reason = (f"Demodulator supports BPSK and QPSK; "
-                      f"detected {mod or 'unknown'}.")
-            self.lbl_demod.setToolTip(reason)
-            self._reset_demod_panel("UNSUPPORTED", reason)
-            return
+        label = None
+        for name in ("BPSK", "QPSK", "8PSK", "16QAM"):
+            if name in mod:
+                label = name
+                break
 
         try:
             samples = self._read_samples_for_demod()
@@ -1191,11 +1319,56 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
                 return
 
             try:
-                from .sigma_demod import demodulate
+                from .sigma_demod import demodulate, classify_constellation
             except ImportError:
-                from sigma_demod import demodulate
-            res = demodulate(samples, self.samp_rate, modulation=label,
-                             sps=sr["samples_per_symbol"])
+                from sigma_demod import demodulate, classify_constellation
+
+            sps = sr["samples_per_symbol"]
+            source = f"classifier: {mod or 'unknown'}"
+
+            if label is None:
+                # Ask the demodulator. It is safe to ask even when the label
+                # names a different family: `classify_constellation` refuses
+                # any signal that does not occupy at least two constellation
+                # phases, which was measured to correctly refuse a real FM/RDS
+                # capture, plus AM, ASK, CW and audio baseband.
+                #
+                # That matters, because 16QAM is misclassified as "AM / ASK" by
+                # the spectral classifier -- its envelope varies, and the
+                # classifier reads that as amplitude modulation. A family check
+                # here would block the one modulation we can now slice.
+                label, evms = classify_constellation(samples, self.samp_rate, sps)
+                if label is None:
+                    best = min(evms.values())
+                    best_txt = ("n/a" if best == float("inf")
+                                else f"{best:.0f}%")
+                    reason = (
+                        f"Detected {mod or 'unknown'}; no digital constellation "
+                        f"explains the symbols (best EVM {best_txt}). Declined "
+                        f"rather than guessing a constellation order.")
+                    self.lbl_demod.setToolTip(reason)
+                    self._reset_demod_panel("UNSUPPORTED", reason)
+                    return
+                source = (f"symbols: {label} is the simplest that fits "
+                          f"(EVM {evms[label]:.1f}%)")
+
+            res = demodulate(samples, self.samp_rate, modulation=label, sps=sps)
+
+            # The spectral classifier cannot separate BPSK from 8PSK (its
+            # strongest M-th-power line sits at x^2 either way), so an 8PSK
+            # capture can arrive here named BPSK -- and a BPSK slice refuses
+            # it. Before giving up, ask the demodulator-based classifier, which
+            # reads the symbols themselves and does separate all four.
+            if not res.locked:
+                alt, alt_evms = classify_constellation(samples, self.samp_rate, sps)
+                if alt is not None and alt != label:
+                    res_alt = demodulate(samples, self.samp_rate,
+                                         modulation=alt, sps=sps)
+                    if res_alt.locked:
+                        res = res_alt
+                        source = (f"symbols: {alt} is the simplest that fits "
+                                  f"(EVM {alt_evms[alt]:.1f}%; "
+                                  f"the classifier said {label})")
             self.demod_result = res
 
             if not res.locked:
@@ -1205,23 +1378,30 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
             self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=True)
             self._set_pipeline_step(self.lbl_bits, "5. BITS", done=True)
+
+            # PS section 3 (i)/(iii)/(iv): FEC scheme identification,
+            # interleaver detection, decode. Runs over the recovered bits. It
+            # is expected to find nothing on ordinary uncoded traffic -- it
+            # reports "no FEC detected" rather than inventing a payload, which
+            # is why it is safe to run always.
+            #
+            # This is the FAST path (interleaver probed with the default code).
+            # A stream that is both coded with a non-default code AND
+            # interleaved is not identified here; that needs the deep search,
+            # offered separately so the normal load stays quick.
+            self._last_bits = np.asarray(res.bits)
+            self.btn_deep_search.setEnabled(True)
+            coding = self._run_coding_analysis()
+
             self.lbl_demod.setToolTip(
-                f"{res.modulation}, {res.n_symbols} symbols, EVM {res.evm_percent:.1f}%")
+                f"{res.modulation}, {res.n_symbols} symbols, "
+                f"EVM {res.evm_percent:.1f}%  --  chosen by {source}")
             self.lbl_bits.setToolTip(
-                f"{len(res.bits)} bits recovered, EVM {res.evm_percent:.1f}%")
+                f"{len(res.bits)} bits recovered, EVM {res.evm_percent:.1f}%"
+                + (f"; {coding.reason}" if coding else ""))
 
             # Populate the DEMODULATION card with the real measured output.
-            self.lbl_demod_state.setText("LOCKED")
-            self.lbl_demod_state.setProperty("class", "DemodValue")
-            self.lbl_demod_method.setText(
-                f"{res.modulation}  \u00b7  RRC matched filter")
-            self.lbl_demod_stats.setText(
-                f"Symbols: {res.n_symbols}      Bits: {len(res.bits)}      "
-                f"EVM: {res.evm_percent:.1f}%\n"
-                f"Carrier offset: {res.carrier_offset_hz:+,.0f} Hz      "
-                f"SPS used: {res.sps:.2f}      Timing: searched"
-            )
-            self.lbl_demod_reason.setVisible(False)
+            self._render_demod_card(res, coding)
             # 48 bits in spaced groups: long enough to be a real payload
             # preview, short enough that the monospace label does not set the
             # minimum width of the window.

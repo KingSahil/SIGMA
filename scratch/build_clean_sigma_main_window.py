@@ -1,6 +1,15 @@
 # -*- coding: utf-8 -*-
 """
 Builder script to generate production-ready src/sigma_main_window.py
+
+!!! SUPERSEDED -- DO NOT RE-RUN !!!
+This script was a ONE-SHOT generator: running it overwrites
+src/sigma_main_window.py wholesale, discarding every subsequent fix to that
+file (the coding-layer card, the header line, the provenance label rename,
+the demod gate, ...). The generated source is now maintained directly.
+Kept only as a record of how the clean UI was first produced.
+It still emits the OLD "Confidence: measured" label; the shipped file reads
+"Source: measured". If you ever need to regenerate, port the fixes first.
 """
 
 code = '''"""

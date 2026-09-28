@@ -27,14 +27,26 @@ def probe(label, want_state):
     w.close()
 
 print("=== demod gate classification matrix ===")
-probe("BPSK",           "LOCKED")        # plain
-probe("BPSK / 2-FSK",   "LOCKED")        # the ambiguity that used to be refused
-probe("QPSK",           "LOCKED")        # plain
-probe("QPSK / 8PSK",    "LOCKED")        # QPSK half of a combined label
-probe("8PSK",           "UNSUPPORTED")   # genuinely not sliceable
-probe("Digital PSK/FSK","UNSUPPORTED")   # indeterminate PSK family
-probe("AM / ASK",       "UNSUPPORTED")   # not PSK at all
-probe("CW / Unmodulated","UNSUPPORTED")  # no constellation
+print("Every case loads the SAME BPSK demo capture and varies only the label.")
+print("The gate now resolves a label to a constellation using the SIGNAL as")
+print("well as the name, so a vague or wrong label still lands on BPSK --")
+print("which is correct here, because the samples really are BPSK.")
+print("Genuine refusals are tested with genuine signals in")
+print("scratch/verify_gui_all_mods.py (unmodulated carrier) and")
+print("scratch/verify_analogue_refused.py (real FM/RDS, AM, ASK, audio).")
+print()
+probe("BPSK",            "LOCKED")       # plain
+probe("BPSK / 2-FSK",    "LOCKED")       # the ambiguity that used to be refused
+probe("QPSK",            "LOCKED")       # a combined/vague label is resolved
+                                         #   from the symbols
+probe("QPSK / 8PSK",     "LOCKED")       # combined label
+probe("8PSK",            "LOCKED")       # now sliceable (was UNSUPPORTED)
+probe("16QAM",           "LOCKED")       # now sliceable (was UNSUPPORTED)
+probe("Digital PSK/FSK", "LOCKED")       # vague but digital: resolved
+probe("AM / ASK",        "LOCKED")       # wrong family: corrected from symbols
+probe("CW / Unmodulated","LOCKED")       # wrong family: corrected from symbols
+probe("FM / RDS",        "LOCKED")       # wrong family: corrected from symbols
+probe("Not analyzed",    "LOCKED")       # no classification: resolved
 
 print(f"\n{'ALL PASSED' if fails == 0 else str(fails) + ' FAILURES'}")
 sys.exit(1 if fails else 0)

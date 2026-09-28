@@ -16,3 +16,15 @@ data/**/*_audible.wav
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Assistant workspace: local tool state and private scratch (never tracked).
+# NOTE: .agents/ and .workbuddy-ai/ were committed in earlier history; those
+# tracked copies were removed here, so this rule now actually takes effect.
+.workbuddy-ai/
+.agents/
+
+# Verification suite console dumps
+scratch/*.out
+
+# Scratch-generated test captures (regenerated on demand by the suites)
+data/iq/gui_test_*.iq

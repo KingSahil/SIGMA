@@ -72,7 +72,7 @@ The repository includes several sample signal recordings for testing different m
 +-----------------------------------+------------------------------------------+
 |  SIGNAL ANALYSIS & DSP METRICS                                |  MODULATION   |
 |  Peak Freq | Center Freq | BW | Power (dBFS)                   |  [ BPSK ]     |
-|  Noise Flr | SNR         | RMS | Peak Amp                      |  Confidence:  |
+|  Noise Flr | SNR         | RMS | Peak Amp                      |  Source:      |
 |  SYMBOL RATE | SAMPLES/SYMBOL | SYMBOL RATE LOCK               |   measured    |
 |  100.00 ksps | 10.00          | HIGH (37.7 dB)                 |               |
 +---------------------------------------------------------------+---------------+

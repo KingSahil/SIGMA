@@ -162,9 +162,10 @@ DemodResult { locked, reason, symbols, bits, modulation, sps,
 
 ### Result
 
-**46/46 configurations at exactly 100.00% bit accuracy, BER 0.0000**, spanning
-BPSK/QPSK × 25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds, using the **detected**
-symbol rate rather than the true one.
+**72/72 configurations locked, 0 refused**, spanning BPSK/QPSK/8PSK/16QAM ×
+25–250 ksps × α = 0.20/0.35/0.50 × 2 seeds, using the **detected** symbol rate
+rather than the true one — BPSK/QPSK/8PSK at exactly **100.00%** bit accuracy
+(BER 0.0000) and 16QAM at **99.98%**.
 
 ---
 
@@ -235,7 +236,7 @@ graph LR
 1. **Input** ✅: File ingestion, format detection (`complex64` IQ or WAV), sample count calculation, WAV-to-IQ conversion.
 2. **Analysis** ✅: Time/frequency/constellation/waterfall visual rendering, RMS voltage, peak amplitude, peak frequency estimation, 99% OBW, noise floor, and SNR.
 3. **Modulation** ✅: Symbol rate `R_s` measured from envelope cyclostationarity, `SPS = f_s / R_s`, PSK order via the 2nd/4th-power test, and modulation class from phase-variance / amplitude-variance features. Confidences are `measured` / `indeterminate` / `filename hint, unverified` — never a fabricated percentage.
-4. **Demodulation** ✅ *(quality-gated)*: 4th-power carrier recovery → RRC matched filter → best sampling phase → constellation-symmetry rotation search → decision. Verified **46/46 configurations at exactly 100.00% bit accuracy, BER 0.0000**.
+4. **Demodulation** ✅ *(quality-gated)*: M-th-power carrier recovery (exponent = the constellation's symmetry order) → RRC matched filter → best sampling phase → constellation-symmetry rotation search → decision. Verified **72/72 configurations locked, 0 refused** (BPSK/QPSK/8PSK 100.00%, 16QAM 99.98%).
 5. **Bits** ✅ *(quality-gated)*: Decision slicing and binary data stream extraction, with an EVM quality metric.
 
 ### Quality gating (stages 4–5)

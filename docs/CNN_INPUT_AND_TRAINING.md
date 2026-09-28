@@ -25,6 +25,50 @@ with the scalars, **97.7%**. Chance is 25%.
 
 ---
 
+## The output, and what it is actually worth
+
+**The network emits four probabilities — one per constellation.** That is the
+entire output:
+
+```
+BPSK  0.94      QPSK  0.04      8PSK  0.01      16QAM 0.01
+```
+
+Its **only** job is to choose which constellation the demodulator should slice.
+A wrong label does not crash anything — it selects the wrong carrier-recovery
+exponent (BPSK 2, QPSK/16QAM 4, 8PSK 8) and returns *silently wrong bits*.
+
+**Two honest caveats before quoting this as a win.**
+
+**(1) It changes one step of eight.** The pipeline is: symbol rate → constellation
+→ **carrier exponent** → matched filter → timing → rotation → decisions → bits.
+The CNN fills one slot.
+
+**(2) A classifier already ships and already works.** `classify_constellation()`
+in `sigma_demod.py` demodulates under each candidate and keeps the simplest that
+fits, guarded by a "≥2 constellation phases" rule. It scores **144/144** over
+4 modulations × 4 rates × 3 excess bandwidths × 3 seeds, and abstains on noise
+(3/3). The real ResNet-50 experiment measured **zero** difference against a small
+CNN at 170× the parameters — and the architecture comparison cannot resolve
+differences under ~2 points (88-sample test set, 1.14% per sample).
+
+So the CNN's value is **not** a measured accuracy gain. It is:
+
+| Value | Status |
+|---|---|
+| Satisfies the PS requirement for an ML/CNN classifier | ✅ concrete — no network exists today |
+| A second, independent opinion to cross-check tier 2 | ✅ real, but only surfaces *disagreement* |
+| Accuracy on real (fading / low-SNR / unseen) signals | ⚠️ **unproven.** Synthetic-on-synthetic only |
+
+**The sequencing consequence:** because the demodulator's own EVM classifier is
+the stronger instrument (a physical measurement with a known noise floor, versus
+a softmax with no error bars on real data), the CNN should be built **as a
+cross-check with the existing classifier as the authority** — or deferred until
+§3 iii/iv/v have code, since three empty sections cost more than one duplicate
+classifier.
+
+---
+
 ## 1. Two things I got wrong first, and what the measurement showed
 
 These matter because both are mistakes someone will otherwise repeat.
@@ -123,9 +167,15 @@ Class order is in `data/ml/feature_spec.json`:
 | ------------------ | -------------------------- | -------------------------------------------------------------- |
 | Modulation         | BPSK, QPSK, 8PSK, 16QAM    | the PS §3 families we can currently slice                      |
 | Symbol rate        | 25k, 50k, 100k, 200k, 250k | **low SPS is the hard regime**                                 |
-| Excess bandwidth α | 0.20, 0.35, 0.50           | **α=0.20 is the hard regime** — measured `NO DEMOD` in 6 cases |
+| Excess bandwidth α | 0.20, 0.35, 0.50           | α=0.20 is the lowest and the most informative case             |
 | SNR                | 10, 20, 30 dB              | 10 dB is realistically hostile                                 |
 | Seeds              | 2                          | catches a lucky-noise result                                   |
+
+> **Superseded note:** this table used to say α=0.20 caused `NO DEMOD` in 6 cases.
+> That is no longer true — the demodulator now locks **72/72 with 0 refused**,
+> including every α=0.20 case. Those failures were carrier-estimate defects, not
+> the timing search. The dataset still *should* include α=0.20 (it is the most
+> demanding case), but no longer because it is a known failure.
 
 360 captures total. Do **not** train only on the easy middle (α=0.35, high SNR,  
 mid rates) — that model will look excellent in validation and fail on the first  
@@ -204,6 +254,84 @@ since the demodulator recovers bits at 100% *once told the right modulation*, a
 wrong label is the single dominant error source in the whole chain. Gate on  
 confidence and emit `ABSTAINED` with a reason.
 
+### Why not ResNet-50 / InceptionV3 / YOLOv3 / Mask R-CNN?
+
+This gets asked every time a CNN is proposed, so it is measured here rather than
+argued. Reproduce with `scratch/architecture_choice.py`.
+
+**Two of the four answer a different question.**
+
+| Model | What it outputs | Our task |
+|---|---|---|
+| YOLOv3 | bounding boxes + a class per box | one capture → one label |
+| Mask R-CNN | a pixel mask per detected object | one capture → one label |
+| ResNet-50 | one label per image | ✅ matches |
+| InceptionV3 | one label per image | ✅ matches |
+
+YOLOv3 and Mask R-CNN are a **detector** and a **segmenter**. They answer *"where
+are the objects, and which pixels belong to each"*. Our captures contain one
+signal and we want one label. That is a category error, not a performance
+difference — no amount of training makes a box-regression head emit a modulation
+class.
+
+**The other two are the right task but the wrong input size.** ResNet-50 expects
+224×224, InceptionV3 expects 299×299. We have 32×32. Upsampling to 224 invents no
+information, and ResNet's own stem immediately downsamples by 4× again — so the
+extra resolution is discarded before it is used.
+
+**Measured: capacity is NOT the binding constraint here.** The script sweeps model
+size on our own dataset (272 train / 88 test, 1024 input pixels):
+
+| Hidden | Params | Params/sample | Train acc | **Test acc** |
+|---|---|---|---|---|
+| 8 | 8,236 | 30 | 100.0% | 98.9% |
+| 64 | 65,860 | 242 | 100.0% | 98.9% |
+| 256 | 263,428 | 968 | 100.0% | **100.0%** |
+| 1024 | 1,053,700 | 3,874 | 100.0% | 98.9% |
+
+**Test accuracy did not collapse as capacity grew.** The script was written to
+demonstrate overfitting and the measurement disproved it. The four classes are
+cleanly separable in pixel space, so even a 1M-parameter model finds the simple
+boundary.
+
+**So these four cannot be ranked on our data at all.** The test set is 88 samples —
+one sample is **1.14%** of accuracy. Any difference between architectures would sit
+inside that noise. Ranking them would be measuring luck.
+
+**Caveat on the sweep above:** the MLP's effective capacity is capped by its
+1024-dimensional input, so it is not a perfect proxy for ResNet-50 on a
+150,528-dimensional input. That caveat was then **closed directly** — see below.
+
+**Measured: a real ResNet-50 does not beat the small CNN.** The sweep above used
+an MLP as a stand-in, so `scratch/resnet_vs_small_cnn.py` trains an actual
+ResNet-50 from scratch (our 32×32 upsampled to 64×64, 3 channels) against the
+small 2-conv CNN, on the identical stratified split:
+
+| Model | Params | Params/sample | Train acc | **Test acc** | Time to converge |
+|---|---|---|---|---|---|
+| small CNN (32×32) | 136,196 | 501 | 100.0% | **100.0%** | 14 s |
+| ResNet-50 (64×64) | 23,516,228 | 86,457 | 100.0% | **100.0%** | 83 s |
+
+**170× the parameters bought 0.0 points.** The difference sits well inside the
+1.14%-per-sample resolution of an 88-sample test set. The small CNN reaches the
+same accuracy in 14 s that ResNet-50 needs 83 s to reach.
+
+Exact counts, measured with torchvision rather than quoted: ResNet-50
+**25,557,032** (1,000-class head; **23,516,228** when instantiated for our 4
+classes), InceptionV3 **27,161,264**, Mask R-CNN (R50-FPN) **44,454,513**,
+small CNN **136,196**. YOLOv3 is not in torchvision and remains a published
+figure — it is excluded on task grounds anyway.
+
+**What actually decides it — there is no headroom.** We are already at 98.9–100%.
+No architecture can exceed the ceiling. The open risk is whether these features
+survive *real* signals (fading, low SNR, modulations we have not generated), and
+that is a **data** question, not an architecture one.
+
+**Recommendation:** the small purpose-built 2-D CNN above (~140k params). Not
+because it is bigger or newer, but because it is sized to the problem and the
+data. Then spend the effort on the generator — fading, more modulations, more
+seeds — because that is where the remaining risk lives.
+
 ---
 
 
@@ -223,6 +351,14 @@ confidence and emit `ABSTAINED` with a reason.
 There is also no training code, no dataset, and no model file anywhere in the  
 repo. So "training the model" is currently a from-zero task, and the first  
 concrete action is a decision: **PyTorch or TensorFlow?**
+
+> **Feasibility confirmed.** To get the exact parameter counts in §3, torch
+> 2.14.0+cpu and torchvision 0.29.0+cpu were installed into an isolated venv
+> (`~/.workbuddy-ai/binaries/python/envs/default`) and a real ResNet-50 was
+> trained on this machine. The install took 1 h 57 m on this connection, but it
+> **succeeded** — so the "no framework available" blocker is a download, not a
+> dead end. That venv is not wired into the app; the app still needs its own
+> install (below).
 
 - **PyTorch** — recommended. Smaller install, easier to debug, and a 2-conv  
   model is 40 lines.
@@ -276,10 +412,13 @@ otherwise "no model installed" becomes "app will not start". Wrap the import in
 > It works: **97.7% on 360 generated captures** (chance 25%), with BPSK/QPSK/  
 > 8PSK/16QAM at 100/100/100/91% recall.
 >
-> Two blockers before this is real: (1) **no ML framework is installed and there  
-> is no training code** — someone needs to pick PyTorch and write ~40 lines;  
-> (2) the **generator needs more samples and a fading step**, because right now  
-> it is synthetic-on-synthetic and we should not quote it as real accuracy.
+> Two blockers before this is real: (1) **the framework is proven but not wired
+> in** — PyTorch/torchvision were installed into an isolated venv and used to
+> train a real ResNet-50 to 100.0% test accuracy on this same dataset (no better
+> than the small CNN, at 170× the parameters), but torch is **not importable from
+> the app** and no training script lives in the repo yet; (2) the **generator
+> needs more samples and a fading step**, because right now it is
+> synthetic-on-synthetic and we should not quote it as real accuracy.
 >
 > Also: the Notion flowchart has the classifier *before* demodulation. For this  
 > design it has to be *after*, because the demodulator is what produces the  
