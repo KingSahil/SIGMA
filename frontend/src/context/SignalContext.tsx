@@ -284,17 +284,63 @@ export function SignalProvider({ children }: { children: ReactNode }) {
       }
       closeSocket();
       if (!result) throw new Error('Analysis timed out');
-      const spectrum = result.spectrum;
-      setSpectralData({
-        frequencies: spectrum.frequencies.map((f: number) => (f + (result.center_frequency || 0)) / 1e6),
-        powerDbfs: spectrum.power, peakFreqMhz: (result.peak_frequency || 0) / 1e6,
-        estimatedCarrierMhz: result.carrier_frequency ? result.carrier_frequency / 1e6 : 0,
-        bandwidthMhz: (result.bandwidth || 0) / 1e6, snrDb: result.snr,
-        noiseFloorDbfs: result.noise_power, estimatedModulation: result.classification.modulation || 'QPSK', confidence: result.classification.confidence || 0, rolloffFactor: 0,
+
+      const spectrum = result.spectrum ?? {};
+      const constellation = result.constellation ?? {};
+      const spectrogram = result.spectrogram ?? {};
+
+      setApiResult({
+        input_metadata: {
+          filename: metadata?.name,
+          file_type: metadata?.format,
+          sample_rate: metadata?.sampleRateHz,
+          center_frequency: metadata?.centerFreqHz,
+          duration_seconds: result.duration,
+          num_samples: result.num_samples,
+        },
+        signal_metrics: {
+          snr_str: Number.isFinite(result.snr) ? `${Number(result.snr).toFixed(1)} dB` : 'Not available',
+          symbol_rate_str: Number.isFinite(result.bandwidth) ? `${(result.bandwidth / 1e3).toFixed(1)} ksym/s` : 'Not available',
+          symbol_rate_lock: result.processing_status || 'Completed',
+        },
+        classification: {
+          modulation: result.classification?.modulation || 'Unclassified',
+          confidence_evidence: result.classification?.mode || 'Measured from uploaded signal.',
+        },
+        recovery: {
+          demodulation_status: result.processing_status || 'Completed',
+          n_symbols: Number(result.num_samples || 0),
+          bits: [],
+          diagnostics: { carrier_frequency_hz: result.carrier_frequency },
+        },
+        overall_status: result.processing_status || 'Completed',
       });
-      setConstellationPoints(result.constellation.i.map((i: number, index: number) => ({ i, q: result.constellation.q[index] })));
-      const matrix = result.spectrogram.power;
-      setWaterfallFrames(matrix[0]?.map((_: number, index: number) => ({ timestamp: result.spectrogram.time[index] || index, bins: matrix.map((row: number[]) => row[index] || -120) })) || []);
+
+      setApiPlots({
+        spectrum_db: Array.isArray(spectrum.power) ? spectrum.power : [],
+        frequencies_norm: Array.isArray(spectrum.frequencies) ? spectrum.frequencies : [],
+        constellation_i: Array.isArray(constellation.i) ? constellation.i : [],
+        constellation_q: Array.isArray(constellation.q) ? constellation.q : [],
+        waterfall_db: Array.isArray(spectrogram.power) ? spectrogram.power : [],
+        snr_db: typeof result.snr === 'number' ? result.snr : undefined,
+        rms_power_dbfs: typeof result.signal_power === 'number' ? result.signal_power : undefined,
+      });
+
+      setSpectralData({
+        frequencies: Array.isArray(spectrum.frequencies) ? spectrum.frequencies.map((f: number) => (f + (result.center_frequency || 0)) / 1e6) : [],
+        powerDbfs: Array.isArray(spectrum.power) ? spectrum.power : [],
+        peakFreqMhz: (result.peak_frequency || 0) / 1e6,
+        estimatedCarrierMhz: result.carrier_frequency ? result.carrier_frequency / 1e6 : 0,
+        bandwidthMhz: (result.bandwidth || 0) / 1e6,
+        snrDb: typeof result.snr === 'number' ? result.snr : 0,
+        noiseFloorDbfs: result.noise_power,
+        estimatedModulation: result.classification?.modulation || 'QPSK',
+        confidence: result.classification?.confidence || 0,
+        rolloffFactor: 0,
+      });
+      setConstellationPoints(Array.isArray(constellation.i) ? constellation.i.map((i: number, index: number) => ({ i, q: constellation.q[index] })) : []);
+      const matrix = Array.isArray(spectrogram.power) ? spectrogram.power : [];
+      setWaterfallFrames(matrix[0]?.map((_: number, index: number) => ({ timestamp: spectrogram.time?.[index] || index, bins: matrix.map((row: number[]) => row[index] || -120) })) || []);
     } finally {
       setIsAnalyzing(false);
     }

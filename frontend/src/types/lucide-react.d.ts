@@ -1,0 +1,55 @@
+declare module 'lucide-react' {
+  export type LucideIcon = React.ComponentType<{
+    className?: string;
+    size?: number | string;
+    color?: string;
+    strokeWidth?: number;
+    [key: string]: unknown;
+  }>;
+
+  export const Upload: LucideIcon;
+  export const X: LucideIcon;
+  export const ArrowRight: LucideIcon;
+  export const ArrowDown: LucideIcon;
+  export const ArrowLeft: LucideIcon;
+  export const ArrowUpRight: LucideIcon;
+  export const Check: LucideIcon;
+  export const CheckCircle2: LucideIcon;
+  export const Search: LucideIcon;
+  export const Plus: LucideIcon;
+  export const Sparkles: LucideIcon;
+  export const Cpu: LucideIcon;
+  export const Wrench: LucideIcon;
+  export const Layers: LucideIcon;
+  export const Layers3: LucideIcon;
+  export const Database: LucideIcon;
+  export const Gauge: LucideIcon;
+  export const Activity: LucideIcon;
+  export const BrainCircuit: LucideIcon;
+  export const FileText: LucideIcon;
+  export const FileCode2: LucideIcon;
+  export const FileCheck2: LucideIcon;
+  export const ChevronRight: LucideIcon;
+  export const GaugeCircle: LucideIcon;
+  export const ShieldCheck: LucideIcon;
+  export const Zap: LucideIcon;
+  export const Play: LucideIcon;
+  export const Pause: LucideIcon;
+  export const Download: LucideIcon;
+  export const RefreshCw: LucideIcon;
+  export const Radio: LucideIcon;
+  export const MonitorSmartphone: LucideIcon;
+  export const Workflow: LucideIcon;
+  export const FolderOpen: LucideIcon;
+  export const Terminal: LucideIcon;
+  export const LayoutDashboard: LucideIcon;
+  export const Binary: LucideIcon;
+  export const History: LucideIcon;
+  export const Settings: LucideIcon;
+  export const Grid3X3: LucideIcon;
+  export const AlertTriangle: LucideIcon;
+  export const MessageSquareText: LucideIcon;
+  export const Copy: LucideIcon;
+  export const AlertCircle: LucideIcon;
+  export const LoaderCircle: LucideIcon;
+}

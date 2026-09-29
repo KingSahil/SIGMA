@@ -60,8 +60,6 @@ export function IngestionModal({
       void loadFile(e.target.files[0]);
     }
   };
-    }
-  };
 
   const handleProceed = async () => {
     if (activeTab === 'upload' && loadedFile) {
@@ -186,10 +184,6 @@ export function IngestionModal({
             </div>
           ) : (
             <div>
-              <label className="mb-2 block text-[11px] text-slate-400">
-                IQ sample rate (Hz)
-                <input value={iqSampleRate} onChange={(e) => setIqSampleRate(e.target.value)} inputMode="numeric" className="ml-2 w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200" />
-              </label>
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
