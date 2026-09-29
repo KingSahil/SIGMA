@@ -108,8 +108,9 @@ def get_result(analysis_id: str) -> dict[str, Any] | None:
 
 
 def latest_result_for_signal(signal_id: str) -> dict[str, Any] | None:
+    # analysis_jobs keys its rows on `id`; there is no `analysis_id` column.
     with connection() as conn:
-        row = conn.execute("SELECT analysis_id FROM analysis_jobs WHERE signal_id = ? AND status = 'COMPLETED' ORDER BY updated_at DESC LIMIT 1", (signal_id,)).fetchone()
+        row = conn.execute("SELECT id FROM analysis_jobs WHERE signal_id = ? AND status = 'COMPLETED' ORDER BY updated_at DESC LIMIT 1", (signal_id,)).fetchone()
     return get_result(row[0]) if row else None
 
 
