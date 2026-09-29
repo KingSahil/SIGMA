@@ -25,6 +25,8 @@ import { HammingDemo } from './HammingDemo';
 import { ErrorControlLab } from './ErrorControlLab';
 import { ModulationType, DeinterleaveMethod, FecCodeType, PipelineStage } from '../../lib/dsp-types';
 import { downloadDossierPdf } from '../../lib/dossier-pdf';
+import { checkSigmaHealth } from '../../lib/sigma-api';
+import { PdfComparison } from './PdfComparison';
 
 interface LabWorkbenchProps {
   onBackToOverview: () => void;
@@ -35,7 +37,13 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
     stage,
     setStage,
     metadata,
+    uploadedFile,
+    apiResult,
+    apiPlots,
+    apiBusy,
+    apiError,
     spectralData,
+    waterfallFrames,
     demodData,
     selectedModulation,
     setSelectedModulation,
@@ -60,7 +68,14 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
-  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'error-control'>('analysis');
+  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'error-control' | 'comparison'>('analysis');
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    checkSigmaHealth(controller.signal).then(() => setApiOnline(true)).catch(() => setApiOnline(false));
+    return () => controller.abort();
+  }, []);
 
   const pipelineStages = [
     { id: 'spectral', label: 'SPECTRAL ANALYSIS', icon: Activity },
@@ -131,8 +146,8 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
           </div>
 
           <div className="flex items-center gap-2 border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] text-zinc-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            PREVIEW · API NOT CONNECTED
+            <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            {apiOnline ? 'SIGMA API CONNECTED' : uploadedFile ? 'API OFFLINE' : 'SAMPLE PREVIEW'}
           </div>
 
           <button
@@ -156,13 +171,14 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/80 px-6 py-2.5">
         <div className="flex items-center gap-2 text-[11px] text-amber-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          Frontend preview data · analysis and intelligence services are not connected
+          <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          {apiOnline ? 'Analysis API connected · upload a capture to run it' : 'Sample preview · connect the SIGMA API to analyze uploaded captures'}
         </div>
         <nav className="flex gap-1" aria-label="Workbench areas">
           <button type="button" onClick={() => setWorkspace('analysis')} aria-current={workspace === 'analysis' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'analysis' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal analysis</button>
           <button type="button" onClick={() => setWorkspace('intelligence')} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>
           <button type="button" onClick={() => setWorkspace('error-control')} aria-current={workspace === 'error-control' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'error-control' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Error control lab</button>
+          <button type="button" onClick={() => setWorkspace('comparison')} aria-current={workspace === 'comparison' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'comparison' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Compare PDF</button>
         </nav>
       </div>
 
@@ -191,9 +207,48 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       {/* Main Lab Screen Area */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
         {workspace === 'intelligence' ? (
-          <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} />
+          <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} />
         ) : workspace === 'error-control' ? (
           <ErrorControlLab />
+        ) : workspace === 'comparison' ? (
+          <PdfComparison result={apiResult} metadata={metadata} />
+        ) : <>
+        {uploadedFile ? (
+          <div className="space-y-5">
+            <section className="border border-zinc-800 bg-[#0c0c0e] p-4 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 pb-4">
+                <div><p className="text-[10px] uppercase tracking-[0.14em] text-cyan-400">Uploaded capture · SIGMA recovery API</p><h2 className="mt-1 text-base font-semibold text-white">{metadata?.name}</h2><p className="mt-1 text-xs text-zinc-500">{metadata?.format} · {((metadata?.sizeBytes ?? 0) / (1024 * 1024)).toFixed(1)} MB · {metadata?.sampleRateHz.toLocaleString()} samples/s</p></div>
+                <button type="button" onClick={handleRunAll} disabled={apiBusy} className="flex items-center gap-2 bg-zinc-100 px-4 py-2 text-xs font-semibold text-black hover:bg-white disabled:opacity-50"><Play className={`h-3.5 w-3.5 ${apiBusy ? 'animate-pulse' : 'fill-black'}`} />{apiBusy ? 'ANALYZING…' : apiResult ? 'RUN AGAIN' : 'RUN ANALYSIS'}</button>
+              </div>
+              {apiBusy && <div className="mt-4 flex items-center gap-2 text-xs text-cyan-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />Uploading capture and running DSP recovery…</div>}
+              {apiError && <p role="alert" className="mt-4 border border-rose-900/70 bg-rose-950/20 p-3 text-xs text-rose-300">{apiError}</p>}
+              {!apiResult && !apiBusy && !apiError && <p className="mt-4 text-xs text-zinc-500">Run analysis to send this capture to the connected SIGMA API. Measurements appear here when processing completes.</p>}
+              {apiResult && <>
+                <div className="mt-5 grid gap-px border border-zinc-800 bg-zinc-800 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['Modulation', apiResult.classification?.modulation ?? 'Not classified'],
+                    ['SNR', apiResult.signal_metrics?.snr_str ?? 'Not available'],
+                    ['Symbol rate', apiResult.signal_metrics?.symbol_rate_str ?? 'Not available'],
+                    ['Status', apiResult.overall_status ?? 'Completed'],
+                  ].map(([label, value]) => <div key={label} className="bg-zinc-950 p-3"><span className="block text-[10px] uppercase text-zinc-500">{label}</span><span className="mt-1 block text-sm font-semibold text-zinc-100">{value}</span></div>)}
+                </div>
+                <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                  <div className="border border-zinc-800 bg-zinc-950 p-4"><p className="text-[10px] uppercase tracking-wider text-zinc-500">Recovery stages</p><dl className="mt-3 space-y-2 text-xs">{[
+                    ['Demodulation', apiResult.recovery?.demodulation_status ?? 'Not returned'],
+                    ['De-interleaving', apiResult.deinterleaving?.status ?? 'Not returned'],
+                    ['FEC', apiResult.fec?.status ?? 'Not returned'],
+                    ['Correlation', apiResult.correlation?.status ?? 'Not returned'],
+                  ].map(([label, value]) => <div key={label} className="flex justify-between gap-3 border-b border-zinc-900 pb-2"><dt className="text-zinc-500">{label}</dt><dd className="text-zinc-200">{value}</dd></div>)}</dl><p className="mt-3 text-[10px] text-zinc-600">Modulation output is the analyzer’s classification evidence; no CNN probability scores are returned.</p></div>
+                  <div className="border border-zinc-800 bg-zinc-950 p-4"><p className="text-[10px] uppercase tracking-wider text-zinc-500">Recovered bit preview</p><pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-emerald-300">{apiResult.fec?.output_bits?.length ? apiResult.fec.output_bits.slice(0, 512).join('') : apiResult.recovery?.bits?.length ? apiResult.recovery.bits.slice(0, 512).join('') : 'No recovered bits returned by the pipeline.'}</pre><p className="mt-3 text-[10px] text-zinc-600">{apiResult.fec?.output_bits?.length ? `Showing ${Math.min(512, apiResult.fec.output_bits.length)} of ${apiResult.fec.output_bits.length} FEC output bits.` : apiResult.recovery?.bits?.length ? `Showing ${Math.min(512, apiResult.recovery.bits.length)} of ${apiResult.recovery.bits.length} demodulated bits.` : 'Bit recovery was not established for this capture.'}</p></div>
+                </div>
+              </>}
+            </section>
+            {apiPlots ? <div className="grid gap-5 xl:grid-cols-2">
+              <div className="h-64 border border-zinc-800 bg-[#0c0c0e] p-4"><InstrumentSpectrum carrierMhz={(metadata?.centerFreqHz ?? 0) / 1e6} spanMhz={(metadata?.sampleRateHz ?? 0) / 1e6} spectrumDb={apiPlots.spectrum_db} frequenciesNorm={apiPlots.frequencies_norm} snrDb={apiPlots.snr_db} /></div>
+              <div className="h-64 border border-zinc-800 bg-[#0c0c0e] p-4"><InstrumentWaterfall frames={apiPlots.waterfall_db} centerFrequencyMhz={(metadata?.centerFreqHz ?? 0) / 1e6} spanMhz={(metadata?.sampleRateHz ?? 0) / 1e6} /></div>
+              <div className="h-64 border border-zinc-800 bg-[#0c0c0e] p-4"><InstrumentConstellation modulation={apiResult?.classification?.modulation ?? 'Unclassified'} points={(apiPlots.constellation_i ?? []).map((i, index) => ({ i, q: apiPlots.constellation_q?.[index] ?? 0 }))} /></div>
+            </div> : uploadedFile && apiResult && metadata?.format !== '.iq' ? <p className="border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-zinc-500">The current visualization endpoint accepts raw float32 IQ, so plots are not returned for this file type. Recovery results above are from the WAV analysis endpoint.</p> : null}
+          </div>
         ) : <>
         {/* STAGE 1: SPECTRAL */}
         {activeStage === 'spectral' && (
@@ -246,13 +301,14 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
                       carrierMhz={metadata?.centerFreqHz ? metadata.centerFreqHz / 1e6 : 433.92}
                       bandwidthMhz={spectralData?.bandwidthMhz || 1.8}
                       snrDb={spectralData?.snrDb || 18.4}
+                      spanMhz={5}
                     />
                   </div>
                 </div>
 
                 <div className="border border-zinc-800 bg-[#0c0c0e] p-4 shadow-sm">
                   <div className="h-44">
-                    <InstrumentWaterfall />
+                    <InstrumentWaterfall frames={waterfallFrames.map((frame) => frame.bins)} centerFrequencyMhz={(metadata?.centerFreqHz ?? 0) / 1e6} spanMhz={(metadata?.sampleRateHz ?? 0) / 1e6} />
                   </div>
                 </div>
               </div>
@@ -648,6 +704,14 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
                   bandwidth: spectralData ? `${spectralData.bandwidthMhz.toFixed(3)} MHz` : 'Not available',
                   snr: spectralData ? `${spectralData.snrDb.toFixed(1)} dB` : 'Not available',
                   signals: [],
+                  isPreview: !uploadedFile,
+                  plotData: apiPlots,
+                  classificationEvidence: apiResult?.classification?.confidence_evidence,
+                  demodulationStatus: apiResult?.recovery?.demodulation_status,
+                  deinterleavingStatus: apiResult?.deinterleaving?.status,
+                  fecStatus: apiResult?.fec?.status,
+                  correlationStatus: apiResult?.correlation?.status,
+                  bitCount: apiResult?.fec?.output_bits?.length ?? apiResult?.recovery?.bits?.length,
                 })}
                 className="flex items-center gap-2 px-5 py-2.5 bg-zinc-100 hover:bg-white text-black font-semibold text-xs transition-all cursor-pointer"
               >
@@ -657,6 +721,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
             </div>
           </div>
         )}
+        </>}
         </>}
       </main>
 

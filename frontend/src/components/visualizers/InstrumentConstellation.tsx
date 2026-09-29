@@ -5,11 +5,13 @@ import React, { useEffect, useRef } from 'react';
 interface InstrumentConstellationProps {
   modulation?: string;
   snrDb?: number;
+  points?: { i: number; q: number }[];
 }
 
 export function InstrumentConstellation({
   modulation = 'QPSK',
   snrDb = 18.4,
+  points,
 }: InstrumentConstellationProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -68,7 +70,17 @@ export function InstrumentConstellation({
         ctx.stroke();
       });
 
-      // Scatter points (simulating 18.4 dB SNR)
+      if (points?.length) {
+        const extent = Math.max(1, ...points.map((point) => Math.max(Math.abs(point.i), Math.abs(point.q))));
+        ctx.fillStyle = '#06b6d4';
+        for (const point of points.slice(0, 400)) {
+          const x = cx + (point.i / extent) * (Math.min(w, h) * 0.42);
+          const y = cy - (point.q / extent) * (Math.min(w, h) * 0.42);
+          ctx.fillRect(x, y, 2, 2);
+        }
+        return;
+      }
+      // Explicitly illustrative constellation for the sample preview only.
       ctx.fillStyle = '#06b6d4';
       for (let i = 0; i < 90; i++) {
         const c = centers[i % 4];
@@ -89,17 +101,17 @@ export function InstrumentConstellation({
     render();
 
     return () => cancelAnimationFrame(animationId);
-  }, [modulation, snrDb]);
+  }, [modulation, snrDb, points]);
 
   return (
     <div className="relative w-full h-full flex flex-col font-mono text-[10px]">
       <div className="flex items-center justify-between pb-1.5 text-zinc-400 border-b border-zinc-800/80 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-zinc-200 font-medium tracking-wide uppercase">
-            I/Q CONSTELLATION
+            {points?.length ? 'RAW I/Q SAMPLE PLANE' : 'CONSTELLATION PREVIEW'}
           </span>
         </div>
-        <span className="text-cyan-400 font-semibold">{modulation} (M=4)</span>
+        <span className="text-cyan-400 font-semibold">{points?.length ? `${modulation} · MEASURED` : `${modulation} · PREVIEW`}</span>
       </div>
 
       <div className="relative flex-1 bg-[#09090b] border border-zinc-800 rounded-sm overflow-hidden flex items-center justify-center">
@@ -119,4 +131,3 @@ export function InstrumentConstellation({
     </div>
   );
 }
-

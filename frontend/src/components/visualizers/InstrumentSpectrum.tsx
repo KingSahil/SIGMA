@@ -6,12 +6,18 @@ interface InstrumentSpectrumProps {
   carrierMhz?: number;
   bandwidthMhz?: number;
   snrDb?: number;
+  spectrumDb?: number[];
+  frequenciesNorm?: number[];
+  spanMhz?: number;
 }
 
 export function InstrumentSpectrum({
   carrierMhz = 433.92,
   bandwidthMhz = 1.8,
   snrDb = 18.4,
+  spectrumDb,
+  frequenciesNorm,
+  spanMhz = 5,
 }: InstrumentSpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -74,7 +80,8 @@ export function InstrumentSpectrum({
 
       // Draw spectral trace (clean phosphor cyan-white line, zero fuzzy blur)
       ctx.beginPath();
-      const numPoints = 128;
+      const measured = spectrumDb && spectrumDb.length > 1;
+      const numPoints = measured ? spectrumDb.length : 128;
       const plotWidth = w - 45;
       const baselineY = h - 24;
 
@@ -96,7 +103,11 @@ export function InstrumentSpectrum({
           signalHump = Math.max(0, (1 - skirtDist) * 12 + (Math.random() * 2 - 1));
         }
 
-        const y = Math.max(10, baselineY - signalHump - noise);
+        const measuredValue = measured ? spectrumDb[i] : undefined;
+        const minDb = measured ? Math.min(...spectrumDb) : -90;
+        const maxDb = measured ? Math.max(...spectrumDb) : 0;
+        const measuredY = measuredValue === undefined ? baselineY : baselineY - ((measuredValue - minDb) / Math.max(1, maxDb - minDb)) * (baselineY - 12);
+        const y = measured ? measuredY : Math.max(10, baselineY - signalHump - noise);
 
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -123,14 +134,16 @@ export function InstrumentSpectrum({
       ctx.arc(centerX, baselineY - 62, 2.5, 0, Math.PI * 2);
       ctx.fill();
 
-      tick++;
-      animationId = requestAnimationFrame(render);
+      if (!measured) {
+        tick++;
+        animationId = requestAnimationFrame(render);
+      }
     };
 
     render();
 
     return () => cancelAnimationFrame(animationId);
-  }, [carrierMhz, bandwidthMhz, snrDb]);
+  }, [carrierMhz, bandwidthMhz, snrDb, spectrumDb, frequenciesNorm]);
 
   return (
     <div className="relative w-full h-full flex flex-col font-mono text-[10px]">
@@ -139,11 +152,11 @@ export function InstrumentSpectrum({
           <span className="text-zinc-200 font-medium tracking-wide uppercase">
             POWER SPECTRUM DENSITY
           </span>
-          <span className="text-zinc-500">[RBW: 10 kHz]</span>
+          <span className="text-zinc-500">{spectrumDb?.length ? '[MEASURED FFT]' : '[ILLUSTRATIVE PREVIEW]'}</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-zinc-500">SPAN: 5.0 MHz</span>
-          <span className="text-cyan-400 font-semibold">PEAK: -18.2 dBFS</span>
+          <span className="text-zinc-500">SPAN: {spanMhz.toFixed(3)} MHz</span>
+          <span className="text-cyan-400 font-semibold">{spectrumDb?.length ? `PEAK: ${Math.max(...spectrumDb).toFixed(1)} dB` : 'SAMPLE TRACE'}</span>
         </div>
       </div>
 
@@ -166,14 +179,13 @@ export function InstrumentSpectrum({
 
         {/* X Axis Labels */}
         <div className="absolute bottom-1 left-9 right-3 flex justify-between text-[9px] font-mono text-zinc-500 pointer-events-none select-none">
-          <span>{(carrierMhz - 2.5).toFixed(1)}</span>
-          <span>{(carrierMhz - 1.25).toFixed(1)}</span>
+          <span>{(carrierMhz - spanMhz / 2).toFixed(3)}</span>
+          <span>{(carrierMhz - spanMhz / 4).toFixed(3)}</span>
           <span className="text-cyan-400 font-semibold">{carrierMhz.toFixed(2)} MHz (Fc)</span>
-          <span>{(carrierMhz + 1.25).toFixed(1)}</span>
-          <span>{(carrierMhz + 2.5).toFixed(1)}</span>
+          <span>{(carrierMhz + spanMhz / 4).toFixed(3)}</span>
+          <span>{(carrierMhz + spanMhz / 2).toFixed(3)}</span>
         </div>
       </div>
     </div>
   );
 }
-
