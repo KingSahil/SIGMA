@@ -29,9 +29,9 @@ export function Header({ onOpenLab, onOpenIngest }: HeaderProps) {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               DSP CORE: ACTIVE
             </span>
-            <span>//</span>
+            <span>{'//'}</span>
             <span>DUAL ADC: 14-BIT</span>
-            <span>//</span>
+            <span>{'//'}</span>
             <span>SAMPLE CLK: 2.40 MSPS</span>
           </div>
         </div>
@@ -58,4 +58,3 @@ export function Header({ onOpenLab, onOpenIngest }: HeaderProps) {
     </header>
   );
 }
-

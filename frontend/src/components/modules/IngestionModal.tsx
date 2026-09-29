@@ -21,7 +21,9 @@ export function IngestionModal({
   const [dragOver, setDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [iqSampleRate, setIqSampleRate] = useState('1000000');
+  const [sampleRate, setSampleRate] = useState(2400000);
+  const [centerFrequencyMhz, setCenterFrequencyMhz] = useState(433.92);
+  const [loadedFile, setLoadedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -31,34 +33,49 @@ export function IngestionModal({
     loadPreset(id);
   };
 
+  const loadFile = async (file: File) => {
+    let detectedRate = sampleRate;
+    if (file.name.toLowerCase().endsWith('.wav')) {
+      try {
+        const header = await file.slice(0, 44).arrayBuffer();
+        const view = new DataView(header);
+        const waveRate = view.byteLength >= 28 ? view.getUint32(24, true) : 0;
+        if (waveRate > 0) { detectedRate = waveRate; setSampleRate(waveRate); }
+      } catch { /* Keep the editable sample-rate value. */ }
+    }
+    setSampleRate(detectedRate);
+    setLoadedFile(file);
+  };
+
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      void handleUpload(e.dataTransfer.files[0]);
+      void loadFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      void handleUpload(e.target.files[0]);
+      void loadFile(e.target.files[0]);
+    }
+  };
     }
   };
 
-  const handleUpload = async (file: File) => {
-    setIsUploading(true);
-    setUploadError(null);
-    try {
-      const rate = file.name.toLowerCase().endsWith('.iq') ? Number(iqSampleRate) : undefined;
-      await uploadCustomSignal(file, rate);
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : 'Signal upload failed');
-    } finally {
+  const handleProceed = async () => {
+    if (activeTab === 'upload' && loadedFile) {
+      setIsUploading(true);
+      setUploadError(null);
+      try {
+        await uploadCustomSignal(loadedFile, sampleRate, centerFrequencyMhz * 1e6);
+      } catch (error) {
+        setUploadError(error instanceof Error ? error.message : 'Signal upload failed');
+        setIsUploading(false);
+        return;
+      }
       setIsUploading(false);
     }
-  };
-
-  const handleProceed = () => {
     onClose();
     onLaunchWorkbench();
   };
@@ -204,14 +221,23 @@ export function IngestionModal({
                   or click to browse local files
                 </p>
 
-                {metadata && !metadata.isPreset && (
+                {(loadedFile || (metadata && !metadata.isPreset)) && (
                   <div className="mt-3 px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-400">
-                    Loaded: {metadata.name} ({(metadata.sizeBytes / (1024 * 1024)).toFixed(1)} MB)
+                    Selected: {loadedFile?.name ?? metadata?.name} ({((loadedFile?.size ?? metadata?.sizeBytes ?? 0) / (1024 * 1024)).toFixed(1)} MB)
                   </div>
                 )}
                 {isUploading && <p className="mt-3 text-xs text-cyan-400">Uploading signal...</p>}
                 {uploadError && <p className="mt-3 text-xs text-red-400">{uploadError}</p>}
               </div>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <label className="text-[11px] text-slate-400">Sample rate (S/s)
+                  <input type="number" min="1" step="1000" value={sampleRate} onChange={(event) => setSampleRate(Number(event.target.value) || 1)} className="mt-1 w-full border border-slate-700 bg-slate-950 px-2.5 py-2 font-mono text-xs text-white outline-none focus:border-cyan-700" />
+                </label>
+                <label className="text-[11px] text-slate-400">Center frequency (MHz)
+                  <input type="number" min="0" step="0.001" value={centerFrequencyMhz} onChange={(event) => setCenterFrequencyMhz(Number(event.target.value) || 0)} className="mt-1 w-full border border-slate-700 bg-slate-950 px-2.5 py-2 font-mono text-xs text-white outline-none focus:border-cyan-700" />
+                </label>
+              </div>
+              <p className="mt-2 text-[10px] text-slate-500">For WAV, the header sample rate is detected on selection. Values can be adjusted before analysis.</p>
             </div>
           )}
         </div>

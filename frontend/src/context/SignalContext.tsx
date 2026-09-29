@@ -27,6 +27,7 @@ import {
   generateMockFec,
   generateMockCorrelation,
 } from '../lib/dsp-mock';
+import { analyzeRawIq, recoverSignal, SigmaAdvancedResult, SigmaRecoveryResult } from '../lib/sigma-api';
 
 interface SignalContextType {
   apiStatus: 'checking' | 'connected' | 'disconnected';
@@ -40,7 +41,12 @@ interface SignalContextType {
   metadata: SignalMetadata | null;
   presets: PresetSignalOption[];
   loadPreset: (presetId: string) => void;
-  uploadCustomSignal: (file: File, sampleRateHz?: number) => Promise<void>;
+  uploadCustomSignal: (file: File, sampleRateHz?: number, centerFreqHz?: number) => Promise<void>;
+  uploadedFile: File | null;
+  apiResult: SigmaRecoveryResult | null;
+  apiPlots: SigmaAdvancedResult['gui_plots'] | null;
+  apiBusy: boolean;
+  apiError: string | null;
 
   // Analysis State
   spectralData: SpectralAnalysisResult | null;
@@ -96,6 +102,11 @@ export function SignalProvider({ children }: { children: ReactNode }) {
 
   // Metadata
   const [metadata, setMetadata] = useState<SignalMetadata | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [apiResult, setApiResult] = useState<SigmaRecoveryResult | null>(null);
+  const [apiPlots, setApiPlots] = useState<SigmaAdvancedResult['gui_plots'] | null>(null);
+  const [apiBusy, setApiBusy] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Spectral & Visualizer
   const [spectralData, setSpectralData] = useState<SpectralAnalysisResult | null>(null);
@@ -143,9 +154,9 @@ export function SignalProvider({ children }: { children: ReactNode }) {
 
   // Auto-load default preset on first launch
   useEffect(() => {
-    loadPreset('cubesat_qpsk_433');
+    const timer = window.setTimeout(() => loadPreset('cubesat_qpsk_433'), 0);
+    return () => window.clearTimeout(timer);
   }, []);
-
   const loadPreset = (presetId: string) => {
     const preset = PRESET_SIGNALS.find((p) => p.id === presetId) || PRESET_SIGNALS[0];
     const newMeta: SignalMetadata = {
@@ -161,6 +172,10 @@ export function SignalProvider({ children }: { children: ReactNode }) {
       presetDescription: preset.description,
     };
     setMetadata(newMeta);
+    setUploadedFile(null);
+    setApiResult(null);
+    setApiPlots(null);
+    setApiError(null);
     setSelectedModulation(preset.defaultModulation);
 
     // Populate initial spectral preview
@@ -180,9 +195,9 @@ export function SignalProvider({ children }: { children: ReactNode }) {
     setCorrelationData(null);
   };
 
-  const uploadCustomSignal = async (file: File, sampleRateHz?: number) => {
+  const uploadCustomSignal = async (file: File, sampleRateHz?: number, centerFreqHz?: number) => {
     const form = new FormData();
-    form.append('file', file);
+    form.append('file', file, file.name);
     if (file.name.toLowerCase().endsWith('.iq')) {
       form.append('iq_format', 'complex64');
       if (sampleRateHz && sampleRateHz > 0) form.append('sample_rate', String(sampleRateHz));
@@ -193,12 +208,17 @@ export function SignalProvider({ children }: { children: ReactNode }) {
     const uploaded = payload.data;
     const info = uploaded.metadata;
     const ext = file.name.toLowerCase().endsWith('.wav') ? '.wav' : '.iq';
+    const resolvedRate = info.sample_rate || sampleRateHz || 0;
     setBackendSignalId(uploaded.signal_id);
     setBackendAnalysisId(null);
+    setUploadedFile(file);
+    setApiResult(null);
+    setApiPlots(null);
+    setApiError(null);
     setMetadata({
       id: uploaded.signal_id, name: uploaded.filename, format: ext,
-      sizeBytes: file.size, sampleRateHz: info.sample_rate || 0,
-      centerFreqHz: info.center_frequency || 0, durationSeconds: info.duration || 0,
+      sizeBytes: file.size, sampleRateHz: resolvedRate,
+      centerFreqHz: centerFreqHz || info.center_frequency || 0, durationSeconds: info.duration || 0,
       totalSamples: info.num_samples || 0, isPreset: false,
     });
     setSpectralData(null);
@@ -281,6 +301,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   };
 
   const runDemodulation = async (mod?: ModulationType) => {
+    if (uploadedFile) return;
     const targetMod = mod || selectedModulation;
     setIsDemodulating(true);
     await new Promise((r) => setTimeout(r, 700));
@@ -291,6 +312,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   };
 
   const runDeinterleave = async (method?: DeinterleaveMethod, rows?: number, cols?: number) => {
+    if (uploadedFile) return;
     const targetMethod = method || selectedDeintMethod;
     const targetRows = rows || deintRows;
     const targetCols = cols || deintCols;
@@ -304,6 +326,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   };
 
   const runFec = async (code?: FecCodeType) => {
+    if (uploadedFile) return;
     const targetCode = code || selectedFecCode;
     const bits = deinterleaveData?.afterBits || demodData?.rawBits || '1010110011010010';
 
@@ -315,6 +338,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   };
 
   const runCorrelation = async () => {
+    if (uploadedFile) return;
     const bits = fecData?.outputBits || deinterleaveData?.afterBits || demodData?.rawBits || '1010110011010010';
 
     setIsCorrelating(true);
@@ -326,6 +350,10 @@ export function SignalProvider({ children }: { children: ReactNode }) {
 
   const runFullPipeline = async () => {
     await runSpectralAnalysis();
+    if (uploadedFile) {
+      setStage('spectral');
+      return;
+    }
     await runDemodulation();
     await runDeinterleave();
     await runFec();
@@ -352,6 +380,11 @@ export function SignalProvider({ children }: { children: ReactNode }) {
         presets: PRESET_SIGNALS,
         loadPreset,
         uploadCustomSignal,
+        uploadedFile,
+        apiResult,
+        apiPlots,
+        apiBusy,
+        apiError,
         spectralData,
         waterfallFrames,
         constellationPoints,
@@ -395,4 +428,3 @@ export function useSignal() {
   }
   return context;
 }
-

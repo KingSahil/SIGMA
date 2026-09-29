@@ -137,7 +137,7 @@ export function EditorialHero({
               {/* Right Side: Telemetry Register */}
               <div className="sm:col-span-7 border border-zinc-800 bg-[#09090b] p-3 font-mono text-[11px] flex flex-col justify-between">
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5 text-zinc-400">
-                  <span className="uppercase text-[9px] tracking-wider text-zinc-500">// 04 PARAMETER TELEMETRY</span>
+                  <span className="uppercase text-[9px] tracking-wider text-zinc-500">{'// 04 PARAMETER TELEMETRY'}</span>
                   <span className="text-emerald-400 text-[10px]">AUTO-ESTIMATED</span>
                 </div>
 
@@ -178,4 +178,3 @@ export function EditorialHero({
     </section>
   );
 }
-

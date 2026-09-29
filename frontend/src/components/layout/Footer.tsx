@@ -18,7 +18,7 @@ export function Footer() {
           </div>
 
           <div className="flex flex-wrap items-center gap-6 text-xs text-zinc-400">
-            <span className="text-zinc-600">// STACK:</span>
+            <span className="text-zinc-600">{'// STACK:'}</span>
             <span>NEXT.JS 16</span>
             <span>FASTAPI</span>
             <span>NUMPY / SCIPY</span>
@@ -38,4 +38,3 @@ export function Footer() {
     </footer>
   );
 }
-
