@@ -8,6 +8,7 @@ Root Launcher for FastAPI Service
 import os
 import sys
 import argparse
+import os
 
 root_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(root_dir, "src")
@@ -18,8 +19,8 @@ from sigma_api import app
 
 def main():
     parser = argparse.ArgumentParser(description="SIGMA RF Intelligence API Server")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host address (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8000, help="Port number (default: 8000)")
+    parser.add_argument("--host", type=str, default=os.getenv("SIGMA_HOST", "127.0.0.1"), help="Host address")
+    parser.add_argument("--port", type=int, default=int(os.getenv("SIGMA_PORT", "8000")), help="Port number")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
     args = parser.parse_args()
 
