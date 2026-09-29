@@ -35,7 +35,7 @@ signals where the answer is known by construction.
 | `scratch/verify_symbol_rate.py` | Symbol-rate accuracy vs known `R_s` |
 | `scratch/verify_demod.py` | Bit accuracy vs known transmitted bits |
 | `scratch/verify_wide.py` | 46-case sweep across modulation × rate × α × seed |
-| `scratch/run_all.py` | Runs all **22**. **This is the command you want.** |
+| `scratch/run_all.py` | Runs all **27**. **This is the command you want.** |
 | `scratch/fec_ground_truth.py` | `(2,1,3)` convolutional encode/decode + the four interleaver modes, with invertibility and burst proofs |
 | `scratch/verify_interleaver_detect.py` | Names the interleaver **blind** from the coded stream |
 | `scratch/verify_coding_module.py` | Scores the **shipped** `src/sigma_coding.py`, incl. the uncoded-refusal safety property |
@@ -49,6 +49,11 @@ signals where the answer is known by construction.
 | `scratch/probe_fsk_phase_shape.py` | A two-tone feature that FAILED — overlap everywhere, and the value was quantised to the histogram bin width |
 | `scratch/probe_fsk_tone_fit.py` | Goodness-of-fit feature that failed at **noise levels far above the project's operating point**; its controls call QPSK two-tone |
 | `scratch/probe_fsk_snr_realistic.py` | The retest at the real operating point (~26–29 dB SNR) that **works**: 2-FSK 0.0000–0.2008 vs controls 0.3488–1.0000, and it recovers the tone deviation. Full record in `STATUS_DONE_VS_LEFT.md` §3c |
+| `scratch/verify_fsk_demod.py` | Scores the **shipped** `estimate_fsk()` / `demodulate_fsk()` against known transmitted bits: **15/15** accepted, **6/6** controls refused, **19/19** demodulated at **99.99%** mean accuracy (worst 99.93%), spacing error **0.00692 rad/sample** |
+| `scratch/verify_fsk_gui.py` | The FSK path through the **real GUI gate**. Asserts the honest current state (the gate stops at `NO CLOCK`) and **fails loudly if that gap closes**, so the limitation is a test, not a comment |
+| `scratch/probe_phase_clock.py` | Why the phase-domain clock fallback fails: `|d_phase|` on an exact two-tone sequence has **std = 0.0000**, an *invariant* across four configurations — the fingerprint of a structural bug |
+| `scratch/probe_phase_clock2.py` | The two CPFSK constructions side by side, and the **wrong lock** they produce (199999 Hz for a true 100000 Hz, the 2nd harmonic, at 191.5 dB) |
+| `scratch/probe_phase_clock3.py` | Where the phase-domain peak actually sits: **not at `R_s`** — measured at 3·`R_s`, 5·`R_s`, 15·`R_s`. The measurement that decided the **revert** |
 | `scratch/verify_default_view.py` | Proves the GUI's *default* view completes the pipeline |
 | `scratch/verify_demod_panel.py` | Proves the DEMODULATION card shows real values, and the refusal shows a reason |
 | `scratch/measure_real_display.py` | Measures window/content fit on the **real** screen |
@@ -541,7 +546,7 @@ Always verify with:
 ## 6. Reproducing everything
 
 ```powershell
-# DSP correctness (no GUI, no GNU Radio needed) -- runs all 22 suites
+# DSP correctness (no GUI, no GNU Radio needed) -- runs all 27 suites
 & "$env:USERPROFILE\radioconda\python.exe" scratch\run_all.py
 
 # Individual DSP suites

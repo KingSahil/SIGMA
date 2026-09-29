@@ -392,20 +392,29 @@ otherwise "no model installed" becomes "app will not start". Wrap the import in
 3. **Class balance is even here (90 each), which is not realistic.** Real  
    captures are overwhelmingly unmodulated or noise. Expect a real deployment to  
    need a "none of the above" class.
-4. **Only four classes.** PS §3 also asks for FSK. FSK is not demoduable yet  
-   (`TEAM_TASKS.md` §3 A4), so it cannot be in the dataset. The L2 classifier  
-   still emits `"BPSK / 2-FSK"` as an ambiguity — **but the identifying feature  
-   is now measured and reproducible** (see `STATUS_DONE_VS_LEFT.md` §3c): a  
-   two-tone fit separates 2-FSK (unexplained 0.0000–0.2008) from every control  
-   (0.3488–1.0000) at the project's real SNR, and returns the tone deviation  
-   too. Resolve FSK end-to-end before claiming PSK+FSK classification.
+4. **Only four classes.** PS §3 also asks for FSK, and FSK is now **demodulable
+   at the module level** — `estimate_fsk()` / `demodulate_fsk()` in
+   `src/sigma_demod.py`, scoring 99.99% mean bit accuracy (see
+   `STATUS_DONE_VS_LEFT.md` §3c). It is still **absent from the CNN dataset**,
+   for a reason that is about the CNN and not about FSK: the label FSK produces
+   is `"BPSK / 2-FSK"`, and the gate resolves it by *trying* the two-tone fit
+   rather than by a trained class. Adding FSK as a fifth class would mean the CNN
+   duplicating a decision the DSP layer already makes with a measured margin.
+   Leave FSK out of the image classifier; it is its own path (see point 5).
 5. **FSK as a CNN class is a design question worth stating.** FSK's  
    constellation collapses to a circle of ONE radius whose *rotation rate*  
    carries the information, so a constellation-density image may not separate  
    2-FSK from CW — unlike the PSK/QAM classes where the constellation is the  
    signal. If FSK is added, it likely wants the tone-spacing feature, not the  
-   image.
-5. **360 samples is small.** It proved the *features* work. It is not enough to  
+   image. That feature is exactly what `estimate_fsk()` already computes, which
+   is the second reason FSK belongs outside the CNN.
+6. **The FSK path is currently unreachable end-to-end.** The demodulator works,
+   but the GUI gate stops earlier, at the **symbol-rate** stage: that estimator
+   reads the envelope and a 2-FSK signal is constant-envelope, so it returns
+   `NO CLOCK`. Nothing in the CNN workstream is blocked by this, but nobody
+   should read "FSK is demodulable" as "FSK works in the app" until
+   `scratch/verify_fsk_gui.py` stops reporting the gap.
+7. **360 samples is small.** It proved the *features* work. It is not enough to  
    train a production classifier — the target should be several thousand, which  
    is minutes of generation time.
 

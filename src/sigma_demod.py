@@ -529,6 +529,291 @@ def format_bitstream_summary(res, max_bits=64):
 CONSTELLATION_ORDER = ("BPSK", "QPSK", "8PSK", "16QAM")
 
 
+# ---------------------------------------------------------------------------
+# FSK -- a DIFFERENT DEMODULATION PATH, not a fifth constellation
+# ---------------------------------------------------------------------------
+# 2-FSK cannot go through `demodulate()` above, and the reason is structural
+# rather than a missing constant. That function's chain starts with carrier
+# recovery by the M-th-power method, which works by stripping the modulation
+# and leaving a spectral line at M times the offset. For 2-FSK the
+# constellation is a single-radius circle whose ROTATION RATE carries the
+# information, so raising it to any power spreads energy rather than
+# collapsing it -- there is no line to find.
+#
+# 2-FSK is therefore demodulated the way it is transmitted: recover the
+# instantaneous frequency, find the two tones, and decide which tone each
+# symbol period sits on. That needs no carrier recovery at all (a residual
+# carrier offset moves BOTH tones equally, so it cancels in the decision) and
+# no matched filter (a constant-envelope tone is already its own matched
+# filter).
+#
+# The one hard problem is that the tone spacing is unknown, which is exactly
+# what the classifier previously could not determine. The estimator below
+# measures the spacing AND reports how well a two-tone model explains the
+# signal, so the same call both identifies 2-FSK and supplies the parameter
+# its demodulator needs.
+#
+# Measured separation (scratch/probe_fsk_snr_realistic.py), at this project's
+# operating point of ~26-29 dB SNR:
+#    2-FSK, 34 cases over rate x index x seed   unexplained 0.0000 .. 0.2008
+#    BPSK/QPSK/8PSK/16QAM/CW/noise, 18 controls unexplained 0.3488 .. 1.0000
+# The margin is taken between the WORST case of each family, not best cases.
+
+# Maximum unexplained share for a signal to be called genuinely two-tone.
+# Anchored in the measurement above: the hardest 2-FSK measured 0.2008 and the
+# easiest control 0.3488, so the threshold sits between them. It is NOT set
+# close to the 2-FSK side on purpose -- a real capture is less clean than a
+# synthetic sweep, and a false "2-FSK" on a PSK capture is far worse than a
+# missed narrow-deviation FSK, which is the region that should abstain.
+FSK_MAX_UNEXPLAINED = 0.2748
+
+# A two-tone fit needs enough samples to form a histogram worth reading.
+FSK_MIN_SAMPLES = 512
+
+# The two tones must be resolvable at all. Below this separation the
+# modulation index is so small that a 2-FSK is spectrally a CW carrier, and
+# the honest answer is an abstention rather than a decision.
+FSK_MIN_SEPARATION_RAD = 0.02
+
+# Below this the tones are so close that the decision is a coin flip on noise.
+FSK_MIN_SYMBOL_SNR = 3.0
+
+
+def estimate_fsk(x, nbins=512):
+    """Measure two-tone structure in a signal's instantaneous frequency.
+
+    Returns a dict with:
+        is_two_tone     bool    -- does a two-tone model explain the signal?
+        tone_lo/_hi     float   -- the two tones, radians/sample
+        separation      float   -- spacing between them, radians/sample
+        deviation_hz    float   -- peak-to-peak tone spacing in Hz (needs
+                                   `samp_rate`; set by the caller)
+        unexplained     float   -- share of samples the model cannot account
+                                   for. LOW means genuinely two-tone.
+        reason          str     -- why it declined, when it did
+
+    Why "unexplained share" and not a raw statistic: every simpler statistic
+    was measured and rejected. `np.std` of the differential phase has fully
+    overlapping ranges between BPSK and 2-FSK (measured BPSK 0.4656..1.3831,
+    2-FSK 0.0483..1.2570) because it is monotone in the modulation index. A
+    separation-to-cluster-width ratio saturates at a mechanical fixed point of
+    2.00. A two-cluster search quantises to its own histogram bin width. This
+    one works because it is a GOODNESS OF FIT: the question is not "is there a
+    statistic of the right size" but "do two tones actually explain these
+    samples", which a phase-modulated signal cannot answer yes to.
+
+    See docs/STATUS_DONE_VS_LEFT.md section 3c for the full record, including
+    the four approaches that failed.
+    """
+    out = {
+        "is_two_tone": False, "tone_lo": None, "tone_hi": None,
+        "separation": 0.0, "deviation_hz": None, "unexplained": 1.0,
+        "reason": "",
+    }
+    x = np.asarray(x, dtype=np.complex128)
+    if x.size < FSK_MIN_SAMPLES:
+        out["reason"] = f"insufficient samples ({x.size} < {FSK_MIN_SAMPLES})"
+        return out
+
+    # Instantaneous frequency as the adjacent-sample phase difference. This is
+    # the standard discriminator; it is noisy at low SNR, which is why the
+    # decision is made on the shape of the distribution rather than a single
+    # sample's value.
+    d = np.angle(x[1:] * np.conj(x[:-1]))
+
+    hist, edges = np.histogram(d, bins=nbins, range=(-np.pi, np.pi))
+    binw = float(edges[1] - edges[0])
+    centres = (edges[:-1] + edges[1:]) / 2.0
+    hist = hist.astype(np.float64)
+
+    order = np.argsort(hist)[::-1]
+    if hist.size == 0 or hist[order[0]] == 0:
+        out["reason"] = "empty instantaneous-frequency distribution"
+        return out
+
+    i1 = int(order[0])
+    # The second tone must be a genuinely separate peak, not the shoulder of
+    # the first. 4 bins is the resolvability floor; the 10% share requirement
+    # stops a lone stray bin from being promoted to "a second tone".
+    i2 = None
+    for i in order[1:]:
+        if abs(int(i) - i1) >= 4 and hist[i] >= 0.10 * hist[i1]:
+            i2 = int(i)
+            break
+    if i2 is None:
+        out["reason"] = ("one dominant tone; not two-tone "
+                         "(a CW carrier or a PSK/QAM capture)")
+        return out
+
+    o1 = float(centres[i1])
+    o2 = float(centres[i2])
+    sep = abs(o1 - o2)
+
+    # Assign each sample to the nearer tone and count what is left over.
+    dist1 = np.abs(np.angle(np.exp(1j * (d - o1))))
+    dist2 = np.abs(np.angle(np.exp(1j * (d - o2))))
+    near1 = dist1 <= dist2
+    # The window scales with the spacing so a narrow tone pair can still
+    # explain its own samples, with a 3-bin floor so it is never tighter than
+    # the histogram resolution.
+    window = max(3.0 * binw, 0.25 * sep)
+    explained = np.where(near1, dist1, dist2) <= window
+    unexplained = 1.0 - float(np.mean(explained))
+
+    out["tone_lo"] = min(o1, o2)
+    out["tone_hi"] = max(o1, o2)
+    out["separation"] = sep
+    out["unexplained"] = unexplained
+
+    if sep < FSK_MIN_SEPARATION_RAD:
+        out["reason"] = (f"tone separation {sep:.4f} rad/sample is below the "
+                         f"resolvability floor {FSK_MIN_SEPARATION_RAD}; "
+                         f"modulation index too small to decide")
+        return out
+    if unexplained > FSK_MAX_UNEXPLAINED:
+        out["reason"] = (f"a two-tone model leaves {unexplained:.4f} of samples "
+                         f"unexplained (limit {FSK_MAX_UNEXPLAINED}); this is "
+                         f"not a two-tone signal")
+        return out
+
+    out["is_two_tone"] = True
+    out["reason"] = (f"two tones {sep:.4f} rad/sample apart, "
+                     f"{unexplained:.4f} unexplained")
+    return out
+
+
+def demodulate_fsk(x, samp_rate, fsk=None, sps=None):
+    """Demodulate 2-FSK to hard-decision bits.
+
+    Parameters
+    ----------
+    x : array_like of complex
+        Complex baseband samples.
+    samp_rate : float
+        Sample rate in samples/sec.
+    fsk : dict, optional
+        Result of `estimate_fsk`. Measured here if not supplied, so the
+        function is usable on its own.
+    sps : float, optional
+        Samples per symbol. Required -- without it there is no symbol clock
+        to decide on.
+
+    Returns
+    -------
+    DemodResult, with `modulation` set to "2-FSK" and `evm_percent`
+    repurposed as a tone-separation margin measure (see the note in the body).
+
+    Carrier recovery is deliberately ABSENT. A residual carrier offset shifts
+    both tones by the same amount, so it cancels when the decision is "which of
+    the two tones is this" -- there is nothing to recover. This is the one
+    place 2-FSK is simpler than PSK, and adding a carrier loop here would
+    reintroduce a failure mode the modulation does not have.
+    """
+    res = DemodResult()
+    res.modulation = "2-FSK"
+
+    x = np.asarray(x, dtype=np.complex128)
+    if x.size < FSK_MIN_SAMPLES:
+        res.reason = f"insufficient samples ({x.size} < {FSK_MIN_SAMPLES})"
+        return res
+    if sps is None:
+        res.reason = "samples-per-symbol required (run symbol rate estimate)"
+        return res
+    if sps < 2.0:
+        res.reason = (f"samples per symbol {sps:.2f} is below 2.0; "
+                      f"symbol recovery is not possible at this rate")
+        return res
+    res.sps = float(sps)
+
+    if fsk is None:
+        fsk = estimate_fsk(x)
+    if not fsk.get("is_two_tone"):
+        res.reason = fsk.get("reason") or "not a two-tone signal"
+        return res
+
+    tone_lo = fsk["tone_lo"]
+    tone_hi = fsk["tone_hi"]
+    sep = fsk["separation"]
+    if samp_rate:
+        res.carrier_offset_hz = float(
+            (tone_lo + tone_hi) / 2.0 * samp_rate / (2.0 * np.pi))
+        res.residual_freq_hz = float(sep * samp_rate / (2.0 * np.pi))
+
+    d = np.angle(x[1:] * np.conj(x[:-1]))
+    sps_int = int(round(sps))
+    if sps_int < 2:
+        res.reason = "samples per symbol rounds below 2"
+        return res
+
+    # Decide on ONE sample per symbol, taken from the symbol's interior.
+    #
+    # MEASURED, and it took two attempts to get right, so both are recorded.
+    #
+    # Attempt 1 sampled the centre via `d[sps//2::sps]`. Correct for sps >= 3,
+    # but at sps=2 that picks index 1 -- the LAST sample of the symbol -- which
+    # straddles the boundary into the next symbol and carries its tone too.
+    # Measured at 400 ksps: 51.63% bit accuracy, i.e. chance.
+    #
+    # Attempt 2 AVERAGED the discriminator over each symbol period, which is
+    # the textbook move for a noisy discriminator. It was WORSE for the
+    # phase-discontinuous case and the numbers say why. Ground truth with the
+    # carrier offset accounted for, measured per sample position within a
+    # symbol (dev=50 kHz at 100 ksps, sps=10):
+    #     positions 0..8  error 0.022   (clean)
+    #     position  9     error 0.776   (34x worse -- the boundary sample)
+    # Averaging folds that one bad sample into every decision. The boundary
+    # sample is not noise to be averaged away; it is a different symbol.
+    #
+    # So: sample the symbol's interior and EXCLUDE the last sample. The number
+    # of usable interior samples is `sps_int - 1`, and the middle of that range
+    # is `(sps_int - 1) // 2`, which gives index 0 for sps=2 (the only interior
+    # sample), 1 for sps=3, 2 for sps=5, and 4 for sps=10 -- each well clear of
+    # the boundary.
+    usable = sps_int - 1
+    mid = usable // 2
+    centres = d[mid::sps_int]
+    n_sym = len(centres)
+    if n_sym < 8:
+        res.reason = "too few symbols after decimation"
+        return res
+
+    mid_tone = (tone_lo + tone_hi) / 2.0
+    # Which side of the midpoint between the tones does each symbol sit on?
+    hi = (centres - mid_tone) > 0.0
+    bits = hi.astype(np.uint8)
+
+    # Quality measure. EVM has no meaning without a constellation, so the
+    # analogue used here is the distance of each decision from the decision
+    # boundary, expressed as a fraction of the half-spacing. A symbol sitting
+    # exactly on a tone scores 1.0; one on the boundary scores 0.0. This is
+    # reported through `evm_percent` as (1 - margin) so that LOWER IS BETTER,
+    # matching every other modulation's convention and keeping the GUI's
+    # existing "is this lock good" logic meaningful.
+    offset = np.abs(centres - mid_tone)
+    margin = float(np.mean(np.clip(offset / (sep / 2.0), 0.0, 1.0)))
+    res.evm_percent = float((1.0 - margin) * 100.0)
+
+    # Refuse a lock when the symbols sit on the decision boundary. Without
+    # this a noise-only input produces a plausible-looking bitstream, which is
+    # the failure this module exists to avoid.
+    if margin < 0.10:
+        res.reason = (f"symbols sit on the decision boundary (margin "
+                      f"{margin:.3f}); tones are not resolvable")
+        return res
+
+    res.bits = bits
+    # `symbols` is the per-symbol frequency offset as a complex phasor, so the
+    # constellation-plotting path has something meaningful to draw: 2-FSK's
+    # two points, on the unit circle.
+    res.symbols = np.exp(1j * centres)
+    res.n_symbols = n_sym
+    res.locked = True
+    res.reason = (f"two tones {sep:.4f} rad/sample apart, "
+                  f"{n_sym} symbols, margin {margin:.3f}")
+    return res
+
+
+
 def constellation_for(modulation):
     """Ideal constellation points for a modulation name, or None if unknown."""
     mod = str(modulation).upper().replace("-", "")

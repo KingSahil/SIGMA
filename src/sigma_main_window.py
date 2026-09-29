@@ -1306,16 +1306,16 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         # 2-FSK at h>=1 reaches this branch (amp_std ~0.020, f_std ~0.63),
         # while a real BPSK does not (amp_std 0.40-0.51). A two-tone
         # goodness-of-fit resolves them with no overlap at this project's SNR
-        # and also returns the tone deviation -- but it is NOT wired in yet, so
-        # for now a 2-FSK capture reaching here will be tried as BPSK and
-        # declined if it does not lock. That is the honest current limit; see
-        # docs/STATUS_DONE_VS_LEFT.md section 3c.
+        # and also returns the tone deviation, so the ambiguity is resolved
+        # below by asking the FSK estimator rather than by preferring a family.
+        # See docs/STATUS_DONE_VS_LEFT.md section 3c for the measurement.
         #
         # Order matters. A combined label such as "QPSK / 8PSK" names two
         # candidates, and the same parsimony that resolves the EVM tie applies:
         # prefer the constellation with fewer points, so test ascending by
         # size. Note "8PSK" contains neither "QPSK" nor "BPSK".
         mod = m.modulation_class or ""
+        ambiguous_fsk = ("FSK" in mod) and ("BPSK" in mod or "PSK" in mod)
         label = None
         for name in ("BPSK", "QPSK", "8PSK", "16QAM"):
             if name in mod:
@@ -1328,12 +1328,64 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
                 return
 
             try:
-                from .sigma_demod import demodulate, classify_constellation
+                from .sigma_demod import (demodulate, classify_constellation,
+                                          estimate_fsk, demodulate_fsk)
             except ImportError:
-                from sigma_demod import demodulate, classify_constellation
+                from sigma_demod import (demodulate, classify_constellation,
+                                         estimate_fsk, demodulate_fsk)
 
             sps = sr["samples_per_symbol"]
             source = f"classifier: {mod or 'unknown'}"
+
+            # Resolve the BPSK / 2-FSK ambiguity by MEASUREMENT, before
+            # committing to either reading. The estimator asks whether two
+            # tones explain the signal, which a phase-modulated capture cannot
+            # answer yes to -- so a no is as informative as a yes, and a 2-FSK
+            # capture is no longer sliced as BPSK and then declined.
+            #
+            # This runs only for a label that names FSK. Running it always
+            # would be wasted work: the estimator is one histogram, but the
+            # decision it informs can only change an FSK-named result.
+            if ambiguous_fsk:
+                fsk_est = estimate_fsk(samples)
+                if fsk_est["is_two_tone"]:
+                    res_fsk = demodulate_fsk(samples, self.samp_rate,
+                                             fsk=fsk_est, sps=sps)
+                    if res_fsk.locked:
+                        self.demod_result = res_fsk
+                        self._set_pipeline_step(self.lbl_demod, "4. DEMOD",
+                                                done=True)
+                        self._set_pipeline_step(self.lbl_bits, "5. BITS",
+                                                done=True)
+                        self._last_bits = np.asarray(res_fsk.bits)
+                        self.btn_deep_search.setEnabled(True)
+                        coding = self._run_coding_analysis()
+                        sep_hz = (fsk_est["separation"] * self.samp_rate
+                                  / (2.0 * np.pi))
+                        src = (f"2-FSK confirmed by two-tone fit "
+                               f"({fsk_est['unexplained']:.3f} unexplained, "
+                               f"tone spacing {sep_hz/1e3:.1f} kHz)")
+                        self.lbl_demod.setToolTip(
+                            f"{res_fsk.modulation}, {res_fsk.n_symbols} symbols, "
+                            f"{res_fsk.reason}  --  {src}")
+                        self.lbl_bits.setToolTip(
+                            f"{len(res_fsk.bits)} bits recovered"
+                            + (f"; {coding.reason}" if coding else ""))
+                        self._render_demod_card(res_fsk, coding)
+                        bits_txt = format_bitstream_summary(res_fsk, max_bits=48)
+                        self.lbl_bitstream.setText(
+                            " ".join(bits_txt[i:i + 4]
+                                     for i in range(0, len(bits_txt), 4)))
+                        for w in (self.lbl_demod_state, self.lbl_demod_method):
+                            w.style().unpolish(w)
+                            w.style().polish(w)
+                        return
+                    # Two tones but the demodulator still declined: fall
+                    # through to the PSK reading rather than returning, since
+                    # the estimator can be wrong and the PSK path is what
+                    # previously handled this label.
+                    source = (f"two-tone fit inconclusive "
+                              f"({res_fsk.reason}); trying {label}")
 
             if label is None:
                 # Ask the demodulator. It is safe to ask even when the label

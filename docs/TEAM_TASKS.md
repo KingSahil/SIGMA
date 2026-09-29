@@ -111,22 +111,34 @@ implement a Gardner / Müller & Müller detector for this**; no case needs one n
 (And do **not** attempt the zero-ISI-null approach — it was measured *worse* than
 taking the strongest spectral bin, 11/20 vs 14/20.)
 
-### A4. FSK demodulation — *medium; blocker resolved 2026-09-18*
+### A4. FSK demodulation — *module done 2026-09-18; GUI blocked by the clock stage*
 
-**The classifier blocker is solved.** The `"BPSK / 2-FSK"` ambiguity has a
-measured, reproducible resolution — a two-tone goodness-of-fit on the
-instantaneous-frequency distribution. At the project's real SNR it separates
-2-FSK (unexplained share **0.0000–0.2008**) from BPSK/QPSK/8PSK/16QAM/CW/noise
-(**0.3488–1.0000**) with no overlap, and **returns the tone deviation** the
-demodulator needs. Reproduce: `scratch/probe_fsk_snr_realistic.py`; full record
-in `docs/STATUS_DONE_VS_LEFT.md` §3c — including the four attempts that failed,
-so do not retry them.
+**The estimator and the demodulator are shipped.** `estimate_fsk()` and
+`demodulate_fsk()` live in `src/sigma_demod.py`, and `scratch/verify_fsk_demod.py`
+scores them against **known transmitted bits**: 2-FSK accepted **15/15**,
+controls refused **6/6**, **19/19** demodulated at **99.99% mean** bit accuracy
+(worst 99.93%), reported tone spacing within **0.00692 rad/sample** of truth.
+The GUI gate calls them on the `"BPSK / 2-FSK"` label, so no existing
+classification result changes.
 
-**What is left:** (a) put the estimator in the classifier behind its own
-verification sweep, (b) write the FSK demodulator — a tone-discriminator slicer,
-which the existing timing search then covers, (c) wire it into the GUI gate.
-The deviation is now an *output* of the estimator, so (b) no longer needs a
-separate search over tone spacing.
+**What is left — one blocker, and it is upstream.** `estimate_symbol_rate` reads
+the **envelope** (`np.abs(x) ** 2`) looking for pulse-shaping ripple; 2-FSK is
+constant-envelope, so the search finds nothing and the gate stops at `NO CLOCK`
+before the FSK path is reached:
+
+```
+symbol rate on 2-FSK : locked=False  R_s=0      confidence=NONE
+symbol rate on BPSK  : locked=True   R_s=100001 confidence=HIGH (37.7 dB)
+```
+
+`scratch/verify_fsk_gui.py` asserts this state and fails if it closes. **A
+phase-domain clock fix was attempted, measured, and reverted** — the peak did not
+track `R_s` (it landed at 3·R_s, 5·R_s, 15·R_s) and one case locked on the second
+harmonic at 191.5 dB. Do not retry that statistic: read
+`scratch/probe_phase_clock3.py` first. Whoever takes this next needs a clock
+recovery that works on a constant-envelope signal *and* passes the PSK/QAM
+regression — e.g. a transition-density or cyclostationary estimator, validated
+against the same `verify_symbol_rate.py` sweep.
 
 Design note: FSK's constellation is a single-radius circle whose *rotation rate*
 carries the information, so it is unlikely to be separable by a

@@ -97,7 +97,47 @@ probe_fsk_snr_realistic.py    the retest at the project's ACTUAL operating
                               Establishes the candidate threshold and the
                               reference implementation the classifier would use.
 
-Added for PS section 3 (i), blind FEC-scheme identification:
+probe_phase_clock.py          WHY the phase-domain clock fallback fails.
+                              2-FSK built as an exact two-tone sequence has
+                              |d_phase| std = 0.0000 -- an INVARIANT number,
+                              the fingerprint of a structural bug, not a
+                              statistical one. Its mean-subtracted square is
+                              identically zero, so the fallback measures
+                              floating-point noise.
+probe_phase_clock2.py         the two CPFSK constructions side by side, and the
+                              WRONG LOCKS they produce. Half-sps construction,
+                              h=2, locks at the SECOND HARMONIC (199999 Hz for a
+                              true 100000 Hz) at 191.5 dB. A wrong lock is
+                              worse than a refusal, so this alone disqualified
+                              the fallback.
+probe_phase_clock3.py         where the phase-domain peak actually sits. It is
+                              NOT at R_s: measured at 3*R_s, 5*R_s and 15*R_s
+                              across the sweep, surviving the 3 dB
+                              sub-harmonic test only when a divisor happens to
+                              fall inside it. This is the measurement that
+                              decided the REVERT, documented so nobody tries
+                              this statistic again without reading it first.
+
+Added for PS section 3 (ii), FSK -- the SHIPPED demodulator:
+
+verify_fsk_demod.py           scores src/sigma_demod.py: estimate_fsk() and
+                              demodulate_fsk() against KNOWN transmitted bits.
+                              15/15 2-FSK accepted, 6/6 controls refused,
+                              19/19 demodulated at 99.99% mean bit accuracy,
+                              and the reported tone spacing checked against the
+                              true spacing (mean error 0.00692 rad/sample).
+                              Also contains the BPSK-vs-2-FSK feature table that
+                              refutes the "the rule cannot separate them" claim.
+verify_fsk_gui.py             the FSK path through the REAL GUI gate. Asserts
+                              the CURRENT, honest state: the FSK label is
+                              produced, but the symbol rate estimator cannot
+                              clock a constant-envelope signal, so the gate
+                              stops at NO CLOCK before the FSK estimator runs.
+                              It FAILS LOUDLY if that gap ever closes without
+                              this file being updated, so it records a real
+                              limitation rather than quietly passing forever.
+
+Added for PS section 3 (ii), FSK -- these are PROBES, not verification suites.
 fec_scheme_search.py          the ground-truth experiment. Recovers five
                               standard rate-1/2 codes from their own encodings,
                               establishes the margin over the runner-up, and
@@ -143,6 +183,11 @@ SCRIPTS = [
     "probe_fsk_phase_shape.py",
     "probe_fsk_tone_fit.py",
     "probe_fsk_snr_realistic.py",
+    "verify_fsk_demod.py",
+    "verify_fsk_gui.py",
+    "probe_phase_clock.py",
+    "probe_phase_clock2.py",
+    "probe_phase_clock3.py",
 ]
 
 

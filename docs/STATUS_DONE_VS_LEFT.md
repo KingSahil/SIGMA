@@ -79,7 +79,7 @@ no section is complete. Every individual item that has moved so far moved **up**
 | ii. **Demod — BPSK / QPSK** | ✅ **Done** | **100.00%** over the full sweep, using the *detected* symbol rate |
 | ii. **Demod — QAM (16QAM)** | ✅ **Done** | **99.98%** (min 99.97%) — the gate now lets it through |
 | ii. **Demod — PSK (8PSK)** | ✅ **Done** | **100.00%** over the full sweep. Was 51.70% (chance); the carrier exponent was hardcoded to `x**4` and is now `x**8` |
-| ii. **Demod — FSK** | ❌ **Not started** | — |
+| ii. **Demod — FSK** | 🟡 **Module done, GUI blocked** | **99.99%** mean bit accuracy (worst 99.93%) over 19 cases; 15/15 detection, 6/6 refusals. **Not reachable through the GUI** — the symbol-rate estimator cannot clock a constant-envelope signal. See §3c |
 | iii. **De-interleaving (4 modes)** | ✅ **Done — shipped and wired** | All 4 modes proven invertible. Detector names the mode **blind: 4/4**, no geometry hint, 288/288 across lengths/geometries. **0/4 on random bits** (control). Runs in the GUI |
 | iv. **FEC (Viterbi / RS / LDPC)** | 🟡 **Convolutional done**, RS/LDPC not | (2,1,3) encode + Viterbi **100.00%**; corrects **20/20** injected flips; refuses uncoded input. `src/sigma_coding.py` |
 | v. **Bitstream correlation, header detection** | ✅ **Done — shipped** | Sync-word search with a **chance-calibrated gate**. Detects at a known offset; **0/25 false positives** on noise; refuses when the word is not decidable. See §3c |
@@ -405,15 +405,65 @@ a CW carrier. Those cases sit nearest the control floor and are the region a
 shipped classifier should **abstain** on rather than decide — which is why the
 threshold must clear 0.2008 and must not be set at 0.05.
 
-### Status: measured, not yet shipped
+### Status: SHIPPED, with a measured blocker downstream
 
-The estimator is **measured and reproducible** (`scratch/probe_fsk_snr_realistic.py`)
-but **is not in the classifier**. Adding it would require re-running the full
-modulation-classification suite against the new branch, and the threshold is
-calibrated on clean synthetic signals — real captures are narrower than a
-synthetic sweep. **This is the honest position: the blocker is solved on paper
-with numbers; the classifier still says `"BPSK / 2-FSK"`, and FSK demodulation
-is still not implemented.**
+The estimator is **shipped** in `src/sigma_demod.py` as `estimate_fsk()`, together
+with the demodulator `demodulate_fsk()`. Both are scored by
+`scratch/verify_fsk_demod.py` against **known transmitted bits**:
+
+| property | measured |
+|---|---|
+| 2-FSK accepted | **15/15** |
+| controls refused (BPSK/QPSK/8PSK/16QAM/CW/noise) | **6/6** |
+| demodulated | **19/19**, 17 perfectly |
+| bit accuracy | mean **99.99%**, worst **99.93%** |
+| reported spacing vs true | mean abs error **0.00692 rad/sample** |
+| correct refusals on noise/PSK | **6/6** |
+
+Not wired into the *classifier* branch itself — the GUI gate calls `estimate_fsk`
+on receiving the `"BPSK / 2-FSK"` label, which is the same information with less
+risk: no existing classification result can change.
+
+#### The blocker that remains — and it is upstream
+
+FSK demodulation **works at the module level but is not reachable through the
+GUI**, because `sigma_symbol_rate.estimate_symbol_rate` reads the **envelope**
+(`env = np.abs(x) ** 2`) and looks for once-per-symbol pulse-shaping ripple. A
+2-FSK signal is constant-envelope, so there is no ripple to find:
+
+```
+symbol rate on 2-FSK : locked=False  R_s=0      confidence=NONE
+symbol rate on BPSK  : locked=True   R_s=100001 confidence=HIGH (37.7 dB)
+```
+
+Measured at the module boundary, not argued. The gate therefore stops at
+`NO CLOCK` before the FSK estimator is ever reached. `scratch/verify_fsk_gui.py`
+asserts this exact state and **fails loudly if the gap ever closes** without the
+file being updated — a limitation recorded as a test rather than a comment.
+
+#### A fix was attempted, measured, and reverted
+
+The obvious fix — read the clock from the **phase** instead, via
+`|d_phase|` detrended and squared — was written, and it does not work. Three
+probes (`scratch/probe_phase_clock*.py`) localise the failure:
+
+* `|d_phase|` on an exactly-two-tone sequence has **std = 0.0000** — an
+  *invariant* number across four different configurations. That is the
+  fingerprint of a structural bug, not a statistical one: the mean-subtracted
+  square is identically zero and the spectrum is floating-point noise.
+* On continuous-phase 2-FSK the statistic's peak is **not at `R_s`** — measured
+  at **3·R_s, 5·R_s and even 15·R_s** across the sweep. Sub-harmonic resolution
+  catches it only when a divisor of 2 lands within **3 dB** of the peak, which
+  happens for some rows and silently fails for others.
+* Worst outcome: one case locks at **199999 Hz for a true 100000 Hz** — the
+  second harmonic, at **191.5 dB** reported confidence. **A confident wrong
+  answer is worse than a refusal**, so the fallback was **reverted**, not tuned.
+  A statistic whose peak location does not track `R_s` cannot be fixed by moving
+  a threshold.
+
+`src/sigma_symbol_rate.py` is back to its committed state; the three probes
+carry a local copy of the reverted code so the failure stays reproducible, each
+headed with a **NOT IN THE SHIPPED MODULE** warning.
 
 ---
 
@@ -476,7 +526,7 @@ CW and audio baseband are all correctly refused.
 |---|---|---|---|
 | 4 | ~~**Timing detector** (Gardner / Müller & Müller)~~ | — | ✅ **No longer needed for α=0.20.** The full sweep is now **72/72 locked, 0 refused**, including every α=0.20 case. The old 6 `NO DEMOD` failures were the carrier-estimate defects in Tier 1, not the timing phase search. Do **not** reach for the zero-ISI-null approach: measured *worse* (11/20 vs 14/20) |
 | 5 | **Train the CNN** | medium | Dataset + baseline already built. Needs ~40 lines of network |
-| 6 | **FSK demodulation** | medium | **Blocker solved 2026-09-18; demodulator itself not written.** The `"BPSK / 2-FSK"` ambiguity is resolved — see the §3c note below. What remains is the FSK demodulator (a tone-discriminator slicer) and wiring it into the gate. Estimated small-to-medium now that the identifying feature is measured and reproducible |
+| 6 | **FSK demodulation** | medium | 🟡 **Demodulator shipped and verified; GUI unreachable behind a measured clock blocker.** `estimate_fsk()` + `demodulate_fsk()` are in `src/sigma_demod.py` and score **99.99% mean bit accuracy** (worst 99.93%) over 19 cases, with 15/15 detection and 6/6 correct refusals. The GUI gate calls them on the `"BPSK / 2-FSK"` label. **Remaining:** `estimate_symbol_rate` cannot clock a constant-envelope signal (it reads the envelope), so the gate stops at `NO CLOCK` before the FSK path runs. A phase-domain fix was attempted, measured, and **reverted** — it produced confident wrong answers. See §3c |
 | 7 | **Wire CNN into the gate** + keep heuristic as cross-check | medium | Depends on 5. Note the demodulator-based classifier (Tier 1b) already covers all four constellations at 144/144, so the CNN's marginal value is now **robustness on real signals**, not basic capability |
 
 ### Tier 3 — the two unstarted problem-statement sections
