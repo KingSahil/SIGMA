@@ -147,13 +147,10 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
           </div>
 
           <div className="flex items-center gap-2 border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] text-zinc-400">
-<<<<<<< HEAD
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
             {apiStatus === 'checking' ? 'API CHECKING' : apiStatus === 'connected' ? 'FASTAPI · CONNECTED' : 'FASTAPI · OFFLINE'}
-=======
             <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
             {apiOnline ? 'SIGMA API CONNECTED' : uploadedFile ? 'API OFFLINE' : 'SAMPLE PREVIEW'}
->>>>>>> bc847d8bcc1e0c1ef17672a57d155691e7701099
           </div>
 
           <button
