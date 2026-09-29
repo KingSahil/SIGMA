@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 600" width="100%" role="img">
+  <title>SIGMA system architecture</title>
+  <desc>Two clients (SIGMA IQ Analyzer desktop and SignalForge web) linked to a FastAPI backend with DSP and RAG routes, calling into src DSP/recovery packages and Google Gemini, over a shared data layer.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <text x="340" y="30" text-anchor="middle" font-size="14" font-weight="500" fill="#E6E6E6">SIGMA — System Architecture</text>
+  <text x="340" y="48" text-anchor="middle" font-size="12" font-weight="400" fill="#9aa4b2">GNU Radio + PyQt5 desktop · Next.js web · FastAPI DSP &amp; RAG</text>
+
+  <rect x="30" y="70" width="170" height="140" rx="10" fill="#0C447C" stroke="#85B7EB" stroke-width="1.5"/>
+  <text x="115" y="90" text-anchor="middle" font-size="13" font-weight="500" fill="#E6F1FB">SIGMA IQ Analyzer</text>
+  <text x="115" y="106" text-anchor="middle" font-size="11" font-weight="400" fill="#85B7EB">PyQt5 + GNU Radio</text>
+  <rect x="40" y="118" width="150" height="26" rx="6" fill="#042C53" stroke="#85B7EB" stroke-width="0.5"/>
+  <text x="115" y="135" text-anchor="middle" font-size="12" font-weight="400" fill="#E6F1FB">Qt GUI · 4 live plots</text>
+  <rect x="40" y="148" width="150" height="26" rx="6" fill="#042C53" stroke="#85B7EB" stroke-width="0.5"/>
+  <text x="115" y="165" text-anchor="middle" font-size="12" font-weight="400" fill="#E6F1FB">GRC flowgraph</text>
+  <rect x="40" y="178" width="150" height="26" rx="6" fill="#042C53" stroke="#85B7EB" stroke-width="0.5"/>
+  <text x="115" y="195" text-anchor="middle" font-size="12" font-weight="400" fill="#E6F1FB">NumPy DSP core</text>
+
+  <rect x="220" y="70" width="170" height="140" rx="10" fill="#0C447C" stroke="#85B7EB" stroke-width="1.5"/>
+  <text x="305" y="90" text-anchor="middle" font-size="13" font-weight="500" fill="#E6F1FB">SignalForge</text>
+  <text x="305" y="106" text-anchor="middle" font-size="11" font-weight="400" fill="#85B7EB">Next.js 16 · TS · Canvas</text>
+  <rect x="230" y="118" width="150" height="26" rx="6" fill="#042C53" stroke="#85B7EB" stroke-width="0.5"/>
+  <text x="305" y="135" text-anchor="middle" font-size="12" font-weight="400" fill="#E6F1FB">Visualizers (FFT, waterfall)</text>
+  <rect x="230" y="148" width="150" height="26" rx="6" fill="#042C53" stroke="#85B7EB" stroke-width="0.5"/>
+  <text x="305" y="165" text-anchor="middle" font-size="12" font-weight="400" fill="#E6F1FB">5-stage lab (ingest→FEC)</text>
+  <rect x="230" y="178" width="150" height="26" rx="6" fill="#042C53" stroke="#85B7EB" stroke-width="0.5"/>
+  <text x="305" y="195" text-anchor="middle" font-size="12" font-weight="400" fill="#E6F1FB">SIM ↔ FASTAPI LIVE</text>
+
+  <rect x="410" y="70" width="170" height="140" rx="10" fill="#27500A" stroke="#97C459" stroke-width="1.5"/>
+  <text x="495" y="90" text-anchor="middle" font-size="13" font-weight="500" fill="#EAF3DE">DSP / recovery (src/)</text>
+  <text x="495" y="106" text-anchor="middle" font-size="11" font-weight="400" fill="#97C459">Python packages</text>
+  <rect x="420" y="118" width="150" height="40" rx="6" fill="#173404" stroke="#97C459" stroke-width="0.5"/>
+  <text x="495" y="135" text-anchor="middle" font-size="12" font-weight="400" fill="#EAF3DE">sigma_demod · symbol_rate</text>
+  <text x="495" y="151" text-anchor="middle" font-size="12" font-weight="400" fill="#EAF3DE">analyzer_core · sample_rate</text>
+  <rect x="420" y="162" width="150" height="40" rx="6" fill="#173404" stroke="#97C459" stroke-width="0.5"/>
+  <text x="495" y="179" text-anchor="middle" font-size="12" font-weight="400" fill="#EAF3DE">recovery · deinterleaving</text>
+  <text x="495" y="195" text-anchor="middle" font-size="12" font-weight="400" fill="#EAF3DE">fec · correlation</text>
+
+  <rect x="220" y="240" width="170" height="170" rx="10" fill="#27500A" stroke="#97C459" stroke-width="1.5"/>
+  <text x="305" y="260" text-anchor="middle" font-size="13" font-weight="500" fill="#EAF3DE">FastAPI</text>
+  <text x="305" y="276" text-anchor="middle" font-size="11" font-weight="400" fill="#97C459">uvicorn · :8000</text>
+  <rect x="230" y="288" width="150" height="32" rx="6" fill="#173404" stroke="#97C459" stroke-width="0.5"/>
+  <text x="305" y="304" text-anchor="middle" font-size="12" font-weight="400" fill="#EAF3DE">/api/* — DSP routes</text>
+  <text x="305" y="318" text-anchor="middle" font-size="11" font-weight="400" fill="#97C459">analyze·mod·sync·demod·deint·fec</text>
+  <rect x="230" y="324" width="150" height="26" rx="6" fill="#173404" stroke="#97C459" stroke-width="0.5"/>
+  <text x="305" y="341" text-anchor="middle" font-size="11" font-weight="400" fill="#EAF3DE">/recover · /demod · /deint · /fec · /correlate</text>
+  <rect x="230" y="354" width="150" height="26" rx="6" fill="#173404" stroke="#97C459" stroke-width="0.5"/>
+  <text x="305" y="371" text-anchor="middle" font-size="12" font-weight="400" fill="#EAF3DE">WebSocket /ws/analysis/{id}</text>
+  <rect x="230" y="384" width="150" height="22" rx="6" fill="#173404" stroke="#97C459" stroke-width="0.5"/>
+  <text x="305" y="400" text-anchor="middle" font-size="11" font-weight="400" fill="#EAF3DE">/rag/* — health, index, ask</text>
+
+  <rect x="410" y="240" width="170" height="170" rx="10" fill="#2C2C2A" stroke="#B4B2A9" stroke-width="1.5"/>
+  <text x="495" y="260" text-anchor="middle" font-size="13" font-weight="500" fill="#F1EFE8">Google Gemini</text>
+  <text x="495" y="276" text-anchor="middle" font-size="11" font-weight="400" fill="#B4B2A9">(AI Studio · external)</text>
+  <rect x="420" y="288" width="150" height="26" rx="6" fill="#1f1f1d" stroke="#B4B2A9" stroke-width="0.5"/>
+  <text x="495" y="305" text-anchor="middle" font-size="12" font-weight="400" fill="#F1EFE8">embeddings — RAG index</text>
+  <rect x="420" y="318" width="150" height="26" rx="6" fill="#1f1f1d" stroke="#B4B2A9" stroke-width="0.5"/>
+  <text x="495" y="335" text-anchor="middle" font-size="12" font-weight="400" fill="#F1EFE8">analyst chat — /rag/ask</text>
+  <rect x="420" y="348" width="150" height="26" rx="6" fill="#1f1f1d" stroke="#B4B2A9" stroke-width="0.5"/>
+  <text x="495" y="365" text-anchor="middle" font-size="12" font-weight="400" fill="#F1EFE8">grounded citations only</text>
+  <text x="495" y="395" text-anchor="middle" font-size="11" font-weight="400" fill="#B4B2A9">(never reads raw IQ)</text>
+
+  <rect x="30" y="440" width="620" height="90" rx="10" fill="#633806" stroke="#EF9F27" stroke-width="1.5"/>
+  <text x="46" y="460" font-size="13" font-weight="500" fill="#FAEEDA">Data layer</text>
+  <text x="46" y="476" font-size="11" font-weight="400" fill="#EF9F27">signals · captures · observations · references</text>
+  <text x="46" y="496" font-size="11" font-weight="400" fill="#FAEEDA">data/iq/*.iq (complex64)  ·  data/audio/*.wav  ·  uploads/  ·  data/sigma_rag.sqlite3</text>
+  <text x="46" y="514" font-size="11" font-weight="400" fill="#FAEEDA">docs/ (indexed)  ·  grc/*.grc  ·  reports/  ·  scratch/  ·  frontend/node_modules</text>
+
+  <line x1="305" y1="210" x2="305" y2="240" stroke="#9aa4b2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="312" y="228" font-size="11" font-weight="400" fill="#9aa4b2">HTTP + WS</text>
+
+  <line x1="390" y1="280" x2="410" y2="140" stroke="#9aa4b2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="396" y="208" font-size="11" font-weight="400" fill="#9aa4b2">calls</text>
+
+  <line x1="390" y1="340" x2="410" y2="325" stroke="#9aa4b2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="394" y="338" font-size="11" font-weight="400" fill="#9aa4b2">RAG</text>
+
+  <line x1="305" y1="410" x2="305" y2="440" stroke="#9aa4b2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="312" y="428" font-size="11" font-weight="400" fill="#9aa4b2">uploads · RAG db · results</text>
+
+  <line x1="115" y1="210" x2="115" y2="440" stroke="#9aa4b2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="122" y="325" font-size="11" font-weight="400" fill="#9aa4b2">reads .iq / .wav</text>
+
+  <text x="340" y="558" text-anchor="middle" font-size="11" font-weight="400" fill="#9aa4b2">Launch — Desktop: run.py (Radioconda)  ·  Web: npm run dev  ·  Backend: run_api.py</text>
+</svg>

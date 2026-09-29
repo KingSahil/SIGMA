@@ -1,0 +1,46 @@
+📡 SIGMA — Architecture Overview
+(Signal Intelligence & Generalized Modulation Analyzer — SIH PS 6147, NTRO/RF)
+
+SIGMA has 3 front-ends all talking to one FastAPI backend, plus a Gemini-powered RAG brain and a shared data layer.
+
+────────────────────────
+🖥️ 1. SIGMA IQ Analyzer (Desktop)
+• PyQt5 GUI + GNU Radio (Radioconda Python)
+• GRC flowgraph → QtGUI sinks bridged via sip.wrapinstance
+• NumPy DSP core for live capture & analysis
+• Launch: python run.py
+
+🌐 2. SignalForge (Web Frontend)
+• Next.js 16 + TypeScript 5 + Tailwind v4 + HTML5 Canvas
+• 5-stage RF lab (Input → Analysis → Modulation → Demod → Bits)
+• Real-time visualizers (spectrum / spectrogram / constellation)
+• Dual engine: SIMULATION (client-side, default) ⇄ FASTAPI LIVE
+• Launch: npm run dev in /frontend
+
+⚙️ 3. DSP / Recovery Core (src/)
+• L1 ingestion → L2 analysis → L3 demod + recovery
+• recovery/ fec/ deinterleaving/ correlation/ backend/
+
+────────────────────────
+🔗 Backend — FastAPI (uvicorn :8000)
+The single link between all front-ends:
+• Analysis & DSP: /api/analyze_advanced, /api/modulate, /api/synchronize, /api/demodulate, /api/deinterleave, /api/fec_decode
+• Legacy/short: /analyze, /demodulate, /deinterleave, /fec/decode, /correlate, /recover
+• Signal store: /signals/upload, /signals/{id}, /analysis, /analysis/{id}/results, /reports/{id}, /history
+• Live viz: /signals/{id}/spectrum · /spectrogram · /constellation
+• Realtime: WebSocket ws://127.0.0.1:8000/ws/analysis/{id}
+• CORS enabled so SignalForge (web) hits it directly
+• Launch: python run_api.py
+
+🤖 RAG Brain — Google Gemini
+• gemini-3.8-flash (chat) + gemini-embedding-001 (vectors)
+• Indexes docs/ + uploads/ → SQLite (data/sigma_rag.sqlite3)
+• Endpoints: /rag/health, /rag/index-project, /rag/knowledge, /rag/knowledge/upload, /rag/ask
+• Evidence-grounded RF analyst that explains results back to the UI
+
+💾 Data Layer
+• data/ (IQ/WAV/JSON/npy), uploads/ (analyst signals), docs/ (tech refs)
+
+────────────────────────
+🔁 How it links
+Desktop & Web → HTTP/WS → FastAPI → src/ DSP → results back to UI; Gemini RAG reads docs/+uploads/ and answers via /rag/ask. One brain, three windows. 🧠
