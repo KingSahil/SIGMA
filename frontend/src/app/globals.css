@@ -1,8 +1,6 @@
 @import "tailwindcss";
 
 :root {
-  --font-sans: var(--font-sans), system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-mono), monospace;
   --background: #040814;
   --foreground: #f1f5f9;
 }
@@ -15,6 +13,13 @@ body {
   letter-spacing: -0.015em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Keep layouts predictable when browser zoom or display scaling changes. */
+html,
+body {
+  width: 100%;
+  min-width: 320px;
 }
 
 code, kbd, samp, pre, .font-mono {

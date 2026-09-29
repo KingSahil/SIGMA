@@ -57,6 +57,9 @@ Thumbs.db
 .env
 .env*.local
 
+# Local RAG index (signal metadata only; raw IQ/WAV files are never indexed)
+data/sigma_rag.sqlite3*
+
 # Python
 __pycache__/
 *.py[cod]

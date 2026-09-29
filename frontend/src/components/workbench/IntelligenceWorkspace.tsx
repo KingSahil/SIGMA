@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, Download, FileText, MessageSquareText, Radio, Search } from 'lucide-react';
+import { AlertTriangle, Check, Download, FileText, LoaderCircle, MessageSquareText, Radio, Search, Send } from 'lucide-react';
 import { SignalMetadata, SpectralAnalysisResult } from '../../lib/dsp-types';
 import { downloadDossierPdf, DossierSignal } from '../../lib/dossier-pdf';
-import { SigmaPlotData, SigmaRecoveryResult } from '../../lib/sigma-api';
+import { askSigmaRAG, getSigmaRAGHealth, SigmaPlotData, SigmaRAGAnswer, SigmaRecoveryResult } from '../../lib/sigma-api';
 import { findEnergyCandidates } from '../../lib/signal-events';
 import { SignalGeneratorPanel } from './SignalGeneratorPanel';
 
@@ -45,6 +45,11 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
   const [feedbackSaved, setFeedbackSaved] = useState(false);
   const [reviews, setReviews] = useState<AnalystReview[]>([]);
   const [reportSaved, setReportSaved] = useState(false);
+  const [ragQuestion, setRagQuestion] = useState('Explain the current analysis and what remains uncertain.');
+  const [ragAnswer, setRagAnswer] = useState<SigmaRAGAnswer | null>(null);
+  const [ragError, setRagError] = useState('');
+  const [ragLoading, setRagLoading] = useState(false);
+  const [ragState, setRagState] = useState<'ready' | 'key_missing' | 'offline' | null>(null);
   useEffect(() => {
     if (apiResult?.classification?.modulation) setFeedbackLabel(apiResult.classification.modulation);
   }, [apiResult?.classification?.modulation]);
@@ -60,6 +65,13 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (view !== 'analyst') return;
+    const controller = new AbortController();
+    getSigmaRAGHealth(controller.signal).then((status) => setRagState(status.configured ? 'ready' : 'key_missing')).catch((error) => { if (error instanceof Error && error.name !== 'AbortError') setRagState('offline'); });
+    return () => controller.abort();
+  }, [view]);
 
   const isLiveCapture = Boolean(metadata && !metadata.isPreset);
   const energyCandidates = useMemo(() => isLiveCapture && metadata ? findEnergyCandidates(
@@ -104,6 +116,16 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
     setReviews(updated);
     try { window.localStorage.setItem(feedbackStorageKey, JSON.stringify(updated)); } catch { /* Browser storage may be disabled. */ }
     setFeedbackSaved(true);
+  };
+
+  const submitRAGQuestion = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const question = ragQuestion.trim();
+    if (!question || ragLoading) return;
+    setRagLoading(true); setRagError(''); setRagAnswer(null);
+    try { setRagAnswer(await askSigmaRAG(question, apiResult)); }
+    catch (error) { setRagError(error instanceof Error ? error.message : 'The analyst request failed.'); }
+    finally { setRagLoading(false); }
   };
 
   const downloadReviews = () => {
@@ -222,18 +244,18 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
       {view === 'analyst' && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.78fr)]">
           <section className={`${cardClass} p-4 sm:p-5`}>
-            <div className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-cyan-400" /><h3 className="text-sm font-semibold text-white">Evidence summary</h3><span className="ml-auto border border-zinc-700 px-2 py-1 text-[10px] text-zinc-500">RAG NOT CONNECTED</span></div>
-            <p className="mt-2 font-sans text-xs text-zinc-500">This panel reports returned measurements only. A future RAG analyst can explain them with cited technical references and historical cases.</p>
-            {apiResult ? <dl className="mt-5 divide-y divide-zinc-800 border-y border-zinc-800 text-xs">{[
-              ['Classification', apiResult.classification?.modulation ?? 'Unknown'],
-              ['Classification evidence', apiResult.classification?.confidence_evidence ?? 'Not returned'],
-              ['SNR', apiResult.signal_metrics?.snr_str ?? 'Not returned'],
-              ['Symbol rate', apiResult.signal_metrics?.symbol_rate_str ?? 'Not returned'],
-              ['Demodulation', apiResult.recovery?.demodulation_status ?? 'Not returned'],
-              ['FEC', apiResult.fec?.status ?? 'Not established'],
-              ['Interleaving', apiResult.deinterleaving?.status ?? 'Not established'],
-              ['Correlation', apiResult.correlation?.status ?? 'Not returned'],
-            ].map(([label, value]) => <div key={label} className="flex justify-between gap-3 py-3"><dt className="text-zinc-500">{label}</dt><dd className="max-w-[65%] text-right text-zinc-200">{value}</dd></div>)}</dl> : <p className="mt-5 border border-dashed border-zinc-800 bg-zinc-950 px-3 py-6 text-center text-xs text-zinc-500">Run analysis to view evidence from the current capture. No generated explanation is shown while the RAG service is unavailable.</p>}
+            <div className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-cyan-400" /><h3 className="text-sm font-semibold text-white">Ask the signal analyst</h3><span className={`ml-auto border px-2 py-1 text-[10px] ${ragState === 'ready' ? 'border-emerald-900/70 text-emerald-300' : 'border-zinc-700 text-zinc-500'}`}>{ragState === 'ready' ? 'GEMINI READY' : ragState === 'key_missing' ? 'GEMINI KEY REQUIRED' : ragState === 'offline' ? 'API RESTART REQUIRED' : 'CHECKING SERVICE'}</span></div>
+            <p className="mt-2 font-sans text-xs text-zinc-500">Answers retrieve project references and this capture’s structured DSP results. The model explains evidence; it does not determine signal measurements.</p>
+            <div className="mt-4 flex flex-wrap gap-2">{['Why this modulation?', 'What is still unknown?', 'Explain the recovery result'].map((prompt) => <button key={prompt} type="button" onClick={() => setRagQuestion(prompt)} className="border border-zinc-800 px-2.5 py-1.5 text-[10px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200">{prompt}</button>)}</div>
+            <form onSubmit={submitRAGQuestion} className="mt-3 flex gap-2"><input value={ragQuestion} onChange={(event) => setRagQuestion(event.target.value)} maxLength={1200} placeholder="Ask about this analysis or RF references" className="min-w-0 flex-1 border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-xs text-white placeholder:text-zinc-600"/><button disabled={ragLoading || !ragQuestion.trim()} type="submit" aria-label="Ask analyst" className="flex shrink-0 items-center gap-2 bg-zinc-100 px-3 text-xs font-semibold text-black disabled:opacity-50">{ragLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}<span className="hidden sm:inline">Ask</span></button></form>
+            {ragError && <p role="alert" className="mt-3 border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">{ragError}</p>}
+            {ragAnswer && <div className="mt-5 space-y-4 border-t border-zinc-800 pt-4"><div><p className={mutedLabel}>Grounded interpretation</p><p className="mt-2 whitespace-pre-wrap font-sans text-sm leading-relaxed text-zinc-200">{ragAnswer.answer}</p></div>
+              {ragAnswer.evidence.length > 0 && <div><p className={mutedLabel}>Retrieved evidence · {ragAnswer.evidence.length}</p><ul className="mt-2 space-y-2">{ragAnswer.evidence.map((source) => <li key={source.id} className="border border-zinc-800 bg-zinc-950 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium text-zinc-200">{source.title}</span><span className="font-mono text-[10px] text-cyan-400">{Math.round(source.score * 100)}% match</span></div><p className="mt-1 text-[10px] text-zinc-500">{source.source} · {source.kind.replaceAll('_', ' ')}</p><p className="mt-2 line-clamp-4 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-zinc-400">{source.content}</p></li>)}</ul></div>}
+              {ragAnswer.uncertainties.length > 0 && <div className="border-l-2 border-amber-600 pl-3"><p className={mutedLabel}>Uncertainty</p><ul className="mt-1 list-inside list-disc text-xs text-amber-200">{ragAnswer.uncertainties.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
+              {ragAnswer.recommended_analysis.length > 0 && <div><p className={mutedLabel}>Suggested follow-up</p><ul className="mt-1 list-inside list-disc text-xs text-zinc-400">{ragAnswer.recommended_analysis.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
+              <p className="text-[10px] text-zinc-600">{ragAnswer.retrieval.strategy} · {ragAnswer.retrieval.generation_model}</p>
+            </div>}
+            {!apiResult && !ragAnswer && <p className="mt-4 border border-dashed border-zinc-800 bg-zinc-950 px-3 py-3 text-xs text-zinc-500">Ask about indexed RF references, or run a capture analysis to include its DSP and recovery observations.</p>}
           </section>
 
           <section className={`${cardClass} p-4 sm:p-5`}>

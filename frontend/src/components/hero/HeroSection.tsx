@@ -59,9 +59,9 @@ export function HeroSection({
       <HeroNavbar onOpenLab={onOpenLab} />
 
       {/* Hero Center Grid */}
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-6 lg:px-12 pt-4 pb-16 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-8 px-4 pt-4 pb-12 sm:px-6 lg:gap-10 lg:px-8 lg:pb-16 xl:grid-cols-12 xl:gap-12 xl:px-12">
         {/* Left Column: Headline & Value Prop */}
-        <div className="lg:col-span-6 flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6 xl:col-span-6">
           {/* Overline category */}
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-mono tracking-[0.25em] text-slate-400 uppercase font-semibold">
@@ -108,7 +108,7 @@ export function HeroSection({
           </div>
 
           {/* 5-Stage Feature Icons Row */}
-          <div className="grid grid-cols-5 gap-3 pt-6 border-t border-slate-800/80 max-w-xl">
+          <div className="grid grid-cols-3 gap-3 border-t border-slate-800/80 pt-6 sm:grid-cols-5 max-w-xl">
             {featureBadges.map((badge, idx) => {
               const Icon = badge.icon;
               return (
@@ -130,7 +130,7 @@ export function HeroSection({
         </div>
 
         {/* Right Column: Hero Product Preview / Lab Scope */}
-        <div className="lg:col-span-6 flex justify-center">
+        <div className="flex min-w-0 justify-center xl:col-span-6">
           <HeroProductPreview onOpenFullLab={onOpenLab} />
         </div>
       </div>
@@ -215,4 +215,3 @@ export function HeroSection({
     </section>
   );
 }
-

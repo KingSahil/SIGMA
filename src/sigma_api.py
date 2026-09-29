@@ -1138,6 +1138,28 @@ class RecoverRequest(BaseModel):
     fec_type: Optional[str] = None
 
 
+class RAGAskRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=1200)
+    signal_object: Optional[Dict[str, Any]] = None
+    filters: Optional[Dict[str, Any]] = None
+    limit: int = Field(default=6, ge=1, le=10)
+
+
+class RAGIndexRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=200000)
+    title: str = Field(min_length=1, max_length=200)
+    source: Optional[str] = Field(default=None, max_length=240)
+    kind: str = "technical_reference"
+
+
+def _rag_module():
+    try:
+        import sigma_rag
+    except ImportError:
+        from . import sigma_rag
+    return sigma_rag
+
+
 @app.post("/analyze", summary="Analyze IQ or WAV Signal File")
 async def post_analyze(
     file: Optional[UploadFile] = File(None),
@@ -1268,6 +1290,11 @@ async def post_recover(
     out_dict = result.to_dict()
     out_dict["analysis_id"] = aid
     ANALYSIS_CACHE[aid] = out_dict
+    try:
+        _rag_module().store_observation(aid, os.path.basename(target_path), out_dict)
+    except Exception as exc:
+        # Knowledge indexing is best-effort and must never invalidate the DSP result.
+        print(f"[SIGMA RAG] Could not store analysis observation: {exc}")
     return out_dict
 
 
@@ -1276,6 +1303,79 @@ async def get_analysis(analysis_id: str):
     if analysis_id not in ANALYSIS_CACHE:
         raise HTTPException(status_code=404, detail="Analysis result not found")
     return ANALYSIS_CACHE[analysis_id]
+
+
+@app.get("/rag/health", summary="RAG Service Status")
+async def rag_health():
+    return _rag_module().health()
+
+
+@app.post("/rag/index-project", summary="Index SIGMA Technical References")
+async def rag_index_project():
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(_rag_module().index_project_references)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not index project references: {exc}") from exc
+
+
+@app.post("/rag/knowledge", summary="Add a Technical Reference or Analyst Note")
+async def rag_add_knowledge(request: RAGIndexRequest):
+    from starlette.concurrency import run_in_threadpool
+    try:
+        source_text = f"# {request.title}\n\n{request.text}"
+        chunks = await run_in_threadpool(_rag_module().ingest_text, request.source or request.title, source_text, request.kind)
+        return {"status": "indexed", "title": request.title, "chunks": chunks}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/rag/knowledge/upload", summary="Upload a PDF, Markdown, or Text Reference")
+async def rag_upload_knowledge(file: UploadFile = File(...), kind: str = Form("technical_reference")):
+    from starlette.concurrency import run_in_threadpool
+    filename = os.path.basename(file.filename or "reference")
+    if not filename.lower().endswith((".pdf", ".md", ".txt")):
+        raise HTTPException(status_code=415, detail="Supported references are PDF, Markdown, and plain text.")
+    raw = await file.read(10_000_001)
+    if len(raw) > 10_000_000:
+        raise HTTPException(status_code=413, detail="Reference exceeds the 10 MB upload limit.")
+    try:
+        if filename.lower().endswith(".pdf"):
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                try:
+                    from PyPDF2 import PdfReader
+                except ImportError as exc:
+                    raise HTTPException(status_code=503, detail="Install backend dependencies from requirements-rag.txt to enable PDF ingestion.") from exc
+            import io
+            try:
+                reader = PdfReader(io.BytesIO(raw))
+                text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail="This PDF could not be read. Check that it is a valid, unencrypted PDF.") from exc
+            if not text.strip():
+                raise HTTPException(status_code=422, detail="No text could be extracted. Scanned PDFs need OCR before ingestion.")
+        else:
+            text = raw.decode("utf-8-sig")
+        chunks = await run_in_threadpool(_rag_module().ingest_text, f"uploaded/{filename}", text, kind)
+        return {"status": "indexed", "source": filename, "chunks": chunks}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/rag/ask", summary="Ask the Evidence-Grounded RF Analyst")
+async def rag_ask(request: RAGAskRequest):
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(_rag_module().ask, request.query, request.signal_object, request.filters, request.limit)
+    except RuntimeError as exc:
+        message = str(exc)
+        code = 503 if "GEMINI_API_KEY" in message or "not configured" in message else 502
+        raise HTTPException(status_code=code, detail=message) from exc
+    except Exception as exc:
+        print(f"[SIGMA RAG] Analyst request failed: {exc}")
+        raise HTTPException(status_code=502, detail="The RAG request failed. Check Gemini configuration and backend logs.") from exc
 
 
 if __name__ == "__main__":

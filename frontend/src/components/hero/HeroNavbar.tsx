@@ -9,8 +9,8 @@ interface HeroNavbarProps {
 
 export function HeroNavbar({ onOpenLab }: HeroNavbarProps) {
   return (
-    <header className="relative z-30 w-full px-6 lg:px-12 py-5 max-w-7xl mx-auto flex flex-col gap-2">
-      <div className="flex items-center justify-between">
+    <header className="relative z-30 mx-auto flex w-full max-w-7xl flex-col gap-2 px-4 py-5 sm:px-6 xl:px-12">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Logo */}
         <div className="flex items-center gap-3 cursor-pointer group">
           <div className="relative flex items-center justify-center">
@@ -31,7 +31,7 @@ export function HeroNavbar({ onOpenLab }: HeroNavbarProps) {
         </div>
 
         {/* Center Navigation Links */}
-        <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
+        <nav className="hidden items-center gap-8 text-sm font-medium text-slate-300 xl:flex">
           <a
             href="#home"
             className="text-white relative after:content-[''] after:absolute after:-bottom-1 after:left-0 after:w-full after:h-0.5 after:bg-blue-500 rounded"
@@ -53,7 +53,7 @@ export function HeroNavbar({ onOpenLab }: HeroNavbarProps) {
         </nav>
 
         {/* Right CTA Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <button
             onClick={onOpenLab}
             className="text-sm font-medium text-slate-300 hover:text-white px-3 py-1.5 transition-colors"
@@ -70,7 +70,7 @@ export function HeroNavbar({ onOpenLab }: HeroNavbarProps) {
       </div>
 
       {/* Radio Signal Intelligence Sub-header tag line on right */}
-      <div className="hidden md:flex items-center justify-end gap-3 pt-1">
+      <div className="hidden items-center justify-end gap-3 pt-1 xl:flex">
         <span className="text-[10px] tracking-[0.25em] font-mono uppercase text-slate-400">
           RADIO &nbsp; SIGNAL &nbsp; INTELLIGENCE
         </span>
@@ -79,4 +79,3 @@ export function HeroNavbar({ onOpenLab }: HeroNavbarProps) {
     </header>
   );
 }
-
