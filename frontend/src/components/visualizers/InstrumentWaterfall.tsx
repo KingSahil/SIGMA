@@ -22,18 +22,42 @@ export function InstrumentWaterfall({ frames = [], centerFrequencyMhz, spanMhz }
       return;
     }
     const rows = frames.length;
-    const cols = Math.min(...frames.map((row) => row.length));
-    const values = frames.flatMap((row) => row.slice(0, cols));
-    const min = Math.min(...values);
-    const span = Math.max(1, Math.max(...values) - min);
+    let cols = Number.POSITIVE_INFINITY;
+    for (const row of frames) {
+      if (row.length > 0 && row.length < cols) {
+        cols = row.length;
+      }
+    }
+    if (!Number.isFinite(cols) || cols <= 0) {
+      ctx.fillStyle = '#71717a';
+      ctx.font = '12px ui-monospace, monospace';
+      ctx.fillText('Run analysis to render a measured waterfall', 14, 24);
+      return;
+    }
+
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (let row = 0; row < rows; row++) {
+      const rowValues = frames[row] ?? [];
+      for (let col = 0; col < cols; col++) {
+        const value = rowValues[col] ?? 0;
+        if (value < min) min = value;
+        if (value > max) max = value;
+      }
+    }
+    const span = Math.max(1, max - min);
     const cellW = width / cols;
     const cellH = height / rows;
-    for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
-      const intensity = Math.max(0, Math.min(1, (frames[row][col] - min) / span));
-      const hue = 225 - intensity * 190;
-      const light = 10 + intensity * 55;
-      ctx.fillStyle = `hsl(${hue} 82% ${light}%)`;
-      ctx.fillRect(col * cellW, row * cellH, Math.ceil(cellW), Math.ceil(cellH));
+    for (let row = 0; row < rows; row++) {
+      const rowValues = frames[row] ?? [];
+      for (let col = 0; col < cols; col++) {
+        const value = rowValues[col] ?? 0;
+        const intensity = Math.max(0, Math.min(1, (value - min) / span));
+        const hue = 225 - intensity * 190;
+        const light = 10 + intensity * 55;
+        ctx.fillStyle = `hsl(${hue} 82% ${light}%)`;
+        ctx.fillRect(col * cellW, row * cellH, Math.ceil(cellW), Math.ceil(cellH));
+      }
     }
   }, [frames]);
 
