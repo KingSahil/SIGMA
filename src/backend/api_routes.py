@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, WebSocket
+from fastapi import WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from . import db
@@ -73,9 +74,41 @@ def _run_analysis(analysis_id: str, request: AnalysisRequest) -> None:
         db.update_job(analysis_id, status="FAILED", stage="FAILED", progress=100, error=str(exc), message="Analysis failed")
 
 
+#: Keys holding large numeric series. They are stripped from every endpoint that
+#: returns results in bulk, because a full STFT matrix plus a 4096-bin spectrum is
+#: several megabytes per analysis. /history previously returned 24 MB for three
+#: jobs purely from these arrays.
+BULK_STRIP_KEYS = ("spectrum", "spectrogram", "constellation")
+
+
+def _slim(result: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Drop oversized plot series, keeping a size hint so clients know data exists."""
+    if not result:
+        return result
+    slimmed = {key: value for key, value in result.items() if key not in BULK_STRIP_KEYS}
+    plots = {}
+    for key in BULK_STRIP_KEYS:
+        series = result.get(key)
+        if isinstance(series, dict):
+            points = series.get("power") or series.get("i") or []
+            plots[key] = {"available": True, "points": len(points), "endpoint": f"/api/signals/{{signal_id}}/{key}"}
+    if plots:
+        slimmed["plots"] = plots
+    return slimmed
+
+
 @router.get("/health", tags=["health"])
 def health() -> dict[str, Any]:
     return {"success": True, "data": {"status": "healthy", "service": "SIGMA RF Intelligence API"}}
+
+
+#: IQ encodings understood by signal_io.read_iq. Kept here so upload can reject
+#: an unusable format at the door rather than at queue time.
+IQ_FORMATS = {"complex64", "fc32", "float32_complex", "complex128", "fc64", "float32", "sc32", "interleaved_float32", "int16", "sc16", "interleaved_int16"}
+
+#: Bytes per complex sample for each accepted IQ format. float32 and int16 are
+#: stored interleaved, so two real values per complex sample.
+IQ_BYTES_PER_SAMPLE = {"complex64": 8, "fc32": 8, "float32_complex": 8, "complex128": 16, "fc64": 16, "float32": 8, "sc32": 8, "interleaved_float32": 8, "int16": 4, "sc16": 4, "interleaved_int16": 4}
 
 
 @router.post("/signals/upload", tags=["signals"])
@@ -86,6 +119,17 @@ async def upload_signal(file: UploadFile = File(...), sample_rate: float | None 
         raise _error("UNSUPPORTED_FORMAT", "Only .iq and .wav files are supported.")
     if file.content_type and file.content_type not in {"application/octet-stream", "audio/wav", "audio/x-wav", "audio/wave"}:
         raise _error("INVALID_MIME", "The uploaded MIME type is not supported.")
+    # Raw IQ carries no self-describing header, so sample rate and format must be
+    # supplied up front. Without them the stored signal can never be analysed --
+    # previously this uploaded successfully and then failed at queue time with 400.
+    if suffix == ".iq":
+        if not sample_rate or sample_rate <= 0:
+            raise _error("MISSING_METADATA", "Raw IQ uploads require sample_rate.")
+        if not iq_format:
+            raise _error("MISSING_METADATA", "Raw IQ uploads require iq_format (complex64, float32, or int16).")
+        iq_format = iq_format.strip().lower()
+        if iq_format not in IQ_FORMATS:
+            raise _error("UNSUPPORTED_FORMAT", f"Unsupported iq_format '{iq_format}'. Use one of: {', '.join(sorted(IQ_FORMATS))}.")
     signal_id = f"SIG-{secrets.token_hex(5).upper()}"
     stored_name = f"{signal_id}{suffix}"
     target = UPLOAD_DIR / stored_name
@@ -103,7 +147,11 @@ async def upload_signal(file: UploadFile = File(...), sample_rate: float | None 
             _, parsed = read_signal(target, "WAV", None, MAX_ANALYSIS_SAMPLES)
         resolved_rate = parsed.get("sample_rate") or sample_rate
         resolved_format = parsed.get("iq_format") or iq_format
-        values = {"id": signal_id, "filename": filename, "stored_name": stored_name, "file_type": suffix[1:].upper(), "size_bytes": total, "mime_type": file.content_type or mimetypes.guess_type(filename)[0], "sample_rate": resolved_rate, "center_frequency": None, "iq_format": resolved_format, "channels": parsed.get("channels"), "duration": (total / 8 / resolved_rate) if suffix == ".iq" and resolved_rate else parsed.get("duration"), "num_samples": parsed.get("num_samples") or ((total // 8) if suffix == ".iq" else None), "requires_metadata": suffix == ".iq" and (not resolved_rate or not resolved_format), "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()}
+        # Sample count depends on the encoding: complex64 is 8 bytes/sample,
+        # int16 is 4. Assuming 8 for everything undercounted int16 captures by 2x.
+        bytes_per_sample = IQ_BYTES_PER_SAMPLE.get(str(resolved_format or "").lower(), 8)
+        derived_samples = (total // bytes_per_sample) if suffix == ".iq" else None
+        values = {"id": signal_id, "filename": filename, "stored_name": stored_name, "file_type": suffix[1:].upper(), "size_bytes": total, "mime_type": file.content_type or mimetypes.guess_type(filename)[0], "sample_rate": resolved_rate, "center_frequency": None, "iq_format": resolved_format, "channels": parsed.get("channels"), "duration": (derived_samples / resolved_rate) if suffix == ".iq" and resolved_rate and derived_samples else parsed.get("duration"), "num_samples": parsed.get("num_samples") or derived_samples, "requires_metadata": suffix == ".iq" and (not resolved_rate or not resolved_format), "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()}
         db.insert_signal(values)
         return {"success": True, "data": {"signal_id": signal_id, "filename": filename, "file_type": values["file_type"], "status": "UPLOADED", "requires_metadata": bool(values["requires_metadata"]), "metadata": values}}
     except HTTPException:
@@ -157,7 +205,7 @@ def analysis(analysis_id: str) -> dict[str, Any]:
     if not job:
         raise _error("ANALYSIS_NOT_FOUND", "Analysis was not found.", 404)
     result = db.get_result(analysis_id)
-    return {"success": True, "data": {"job": job, "result": result}}
+    return {"success": True, "data": {"job": job, "result": _slim(result)}}
 
 
 @router.get("/analysis/{analysis_id}/results", tags=["analysis"])
@@ -215,7 +263,8 @@ def report(analysis_id: str) -> dict[str, Any]:
 
 @router.get("/history", tags=["history"])
 def history() -> dict[str, Any]:
-    return {"success": True, "data": [{"job": db.get_job(row["id"]), "result": db.get_result(row["id"])} for row in _jobs()]}
+    # Results are returned slimmed; fetch /api/analysis/{id}/results for full series.
+    return {"success": True, "data": [{"job": db.get_job(row["id"]), "result": _slim(db.get_result(row["id"]))} for row in _jobs()]}
 
 
 def _jobs() -> list[dict[str, Any]]:
@@ -242,5 +291,12 @@ async def analysis_socket(websocket: WebSocket, analysis_id: str) -> None:
             if job["status"] in {"COMPLETED", "FAILED"}:
                 return
             await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        # Client navigated away. Nothing to report; the finally block still closes.
+        pass
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except RuntimeError:
+            # Already closed by the client.
+            pass

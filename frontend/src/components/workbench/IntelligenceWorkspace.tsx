@@ -35,10 +35,18 @@ interface IntelligenceWorkspaceProps {
   spectralData: SpectralAnalysisResult | null;
   apiResult?: SigmaRecoveryResult | null;
   apiPlots?: SigmaPlotData | null;
+  initialView?: WorkspaceView;
+  view?: WorkspaceView;
+  onViewChange?: (view: WorkspaceView) => void;
 }
 
-export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null, apiPlots = null }: IntelligenceWorkspaceProps) {
-  const [view, setView] = useState<WorkspaceView>('signals');
+export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null, apiPlots = null, initialView = 'signals', view: controlledView, onViewChange }: IntelligenceWorkspaceProps) {
+  const [internalView, setInternalView] = useState<WorkspaceView>(initialView);
+  const view = controlledView ?? internalView;
+  const setView = (next: WorkspaceView) => {
+    if (controlledView === undefined) setInternalView(next);
+    onViewChange?.(next);
+  };
   const [selectedSignal, setSelectedSignal] = useState(sampleSignals[0].id);
   const [feedbackLabel, setFeedbackLabel] = useState('QPSK');
   const [feedbackNote, setFeedbackNote] = useState('');
@@ -137,7 +145,32 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
   };
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-5" id="signal-intelligence">
+      {/* Sticky top quick-access bar — keeps the Multimodal classifier one click away while scrolling */}
+      <div className="sticky top-14 z-30 -mx-3 border-b border-zinc-800 bg-[#09090b]/95 px-3 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2">
+          <span className="mr-1 hidden text-[10px] uppercase tracking-[0.18em] text-zinc-500 sm:inline">Quick access:</span>
+          <button
+            type="button"
+            onClick={() => { setView('model'); document.getElementById('signal-intelligence')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold transition-colors ${view === 'model' ? 'bg-cyan-400 text-black' : 'bg-cyan-950/40 text-cyan-200 ring-1 ring-cyan-800/70 hover:bg-cyan-900/60 hover:text-white'}`}
+            aria-current={view === 'model' ? 'page' : undefined}
+          >
+            <span aria-hidden>◈</span> Multimodal classifier
+          </button>
+          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Investigation views (quick access)">
+            {([
+              ['signals', 'Signals'],
+              ['analyst', 'AI analyst'],
+              ['reports', 'Reports'],
+            ] as const).map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} className={`px-3 py-2 text-xs transition-colors ${view === id ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
       <div className="flex flex-col gap-4 border-b border-zinc-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-400">Investigation workspace</p>

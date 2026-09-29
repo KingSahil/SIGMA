@@ -97,6 +97,8 @@ def update_job(job_id: str, **values: Any) -> None:
 
 
 def save_result(analysis_id: str, signal_id: str, result: dict[str, Any]) -> None:
+    # analysis_id is the primary key, so each analysis keeps its own row and
+    # re-analysing a signal no longer overwrites the previous run's result.
     with connection() as conn:
         conn.execute("INSERT OR REPLACE INTO analysis_results VALUES (?, ?, ?, ?)", (analysis_id, signal_id, json.dumps(result), _now()))
 
