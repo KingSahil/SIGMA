@@ -1,6 +1,7 @@
 export type PipelineStage = 
   | 'ingest'
   | 'spectral'
+  | 'modulation'
   | 'demod'
   | 'deinterleave'
   | 'fec'
@@ -110,4 +111,3 @@ export interface PresetSignalOption {
   snrDb: number;
   bandwidthMhz: number;
 }
-

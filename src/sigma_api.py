@@ -732,6 +732,7 @@ class ModulateRequest(BaseModel):
     phase_offset_deg: float = Field(default=0.0, description="Initial carrier phase offset in degrees")
     snr_db: Optional[float] = Field(default=None, description="Additive White Gaussian Noise (SNR in dB)")
     samp_rate: float = Field(default=1e6, gt=0, description="Sample rate in Hz")
+    num_samples: int = Field(default=4096, ge=256, le=100000, description="Number of baseband IQ samples to generate")
 
 
 class SynchronizeRequest(BaseModel):
@@ -932,9 +933,13 @@ async def api_modulate(req: ModulateRequest):
                 for b in range(7, -1, -1):
                     bits.append((val >> b) & 1)
         else:
-            # Default test sequence with Barker 11 preamble
+            # Generate enough symbols to meet the requested IQ sample count.
             barker11 = [1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0]
-            payload = [int(b) for b in np.random.randint(0, 2, size=128)]
+            bits_per_symbol = BITS_PER_SYMBOL.get(req.modulation.upper().replace("-", ""), 1)
+            symbol_count = int(np.ceil(req.num_samples / req.sps))
+            requested_bits = symbol_count * bits_per_symbol
+            payload_size = max(0, requested_bits - len(barker11))
+            payload = [int(b) for b in np.random.randint(0, 2, size=payload_size)]
             bits = barker11 + payload
 
         iq_samples = modulate_bitstream(
@@ -948,6 +953,7 @@ async def api_modulate(req: ModulateRequest):
             snr_db=req.snr_db,
             samp_rate=req.samp_rate,
         )
+        iq_samples = iq_samples[:req.num_samples]
 
         spectral = extract_spectral_gui_data(iq_samples, fft_size=512)
 
@@ -957,8 +963,8 @@ async def api_modulate(req: ModulateRequest):
             "total_bits": len(bits),
             "total_samples": len(iq_samples),
             "sps": req.sps,
-            "samples_i": np.real(iq_samples[:500]).tolist(),
-            "samples_q": np.imag(iq_samples[:500]).tolist(),
+            "samples_i": np.real(iq_samples).tolist(),
+            "samples_q": np.imag(iq_samples).tolist(),
             "gui_plots": spectral,
         }
     except Exception as e:

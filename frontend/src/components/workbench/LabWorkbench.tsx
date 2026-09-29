@@ -26,6 +26,7 @@ import { ErrorControlLab } from './ErrorControlLab';
 import { ModulationType, DeinterleaveMethod, FecCodeType, PipelineStage } from '../../lib/dsp-types';
 import { downloadDossierPdf } from '../../lib/dossier-pdf';
 import { PdfComparison } from './PdfComparison';
+import { SignalGeneratorPanel } from './SignalGeneratorPanel';
 import { BlockchainFingerprintWorkspace } from './BlockchainFingerprintWorkspace';
 
 interface LabWorkbenchProps {
@@ -71,21 +72,23 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'fingerprinting' | 'error-control' | 'comparison'>('analysis');
+  const apiOnline = apiStatus === 'connected';
 
   const pipelineStages = [
     { id: 'spectral', label: 'SPECTRAL ANALYSIS', icon: Activity },
+    { id: 'modulation', label: 'MODULATION', icon: Radio },
     { id: 'demod', label: 'DEMODULATION', icon: Cpu },
     { id: 'deinterleave', label: 'DE-INTERLEAVING', icon: Layers },
     { id: 'fec', label: 'FEC DECODING', icon: FileCheck2 },
     { id: 'correlate', label: 'FRAME CORRELATION', icon: FileCode2 },
   ] as const;
 
-  const activeStage = ['spectral', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)
+  const activeStage = ['spectral', 'modulation', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)
     ? stage
     : 'spectral';
 
   useEffect(() => {
-    if (!['spectral', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)) {
+    if (!['spectral', 'modulation', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)) {
       setStage('spectral');
     }
   }, [stage, setStage]);
@@ -172,13 +175,8 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/80 px-3 py-2.5 sm:px-6">
         <div className="flex items-center gap-2 text-[11px] text-amber-300">
-<<<<<<< HEAD
           <span className={`h-1.5 w-1.5 rounded-full ${apiStatus === 'connected' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
           {apiStatus === 'connected' ? 'FastAPI analysis services connected' : apiStatus === 'checking' ? 'Checking FastAPI analysis services...' : 'FastAPI unavailable - start run_api.py on port 8000'}
-=======
-          <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          {apiOnline ? 'Analysis API connected · upload a capture to run it' : 'Sample preview · connect the SIGMA API to analyze uploaded captures'}
->>>>>>> 0cc662e11b9eeed9419e70aa027b0ee3c0b2bc3b
         </div>
         {pipelineError && <div className="border border-red-900/60 bg-red-950/30 px-3 py-1.5 text-[11px] text-red-300">{pipelineError}</div>}
         <nav className="flex flex-wrap gap-1" aria-label="Workbench areas">
@@ -223,7 +221,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
         ) : workspace === 'comparison' ? (
           <PdfComparison result={apiResult} metadata={metadata} />
         ) : <>
-        {uploadedFile ? (
+        {uploadedFile && activeStage !== 'modulation' ? (
           <div className="space-y-5">
             <section className="border border-zinc-800 bg-[#0c0c0e] p-4 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 pb-4">
@@ -260,6 +258,28 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
             </div> : uploadedFile && apiResult && metadata?.format !== '.iq' ? <p className="border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-zinc-500">The current visualization endpoint accepts raw float32 IQ, so plots are not returned for this file type. Recovery results above are from the WAV analysis endpoint.</p> : null}
           </div>
         ) : <>
+        {activeStage === 'modulation' && (
+          <section className="space-y-5">
+            <div className="border border-zinc-800 bg-[#0c0c0e] p-5 sm:p-6">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-cyan-400">Stage 02 · Transmitter</p>
+              <h2 className="mt-2 text-lg font-semibold text-white">Modulation & IQ generation</h2>
+              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-zinc-400">Choose a digital modulation scheme and channel conditions to create a synthetic IQ capture. Generated samples can be downloaded for analysis and demodulation.</p>
+            </div>
+            <SignalGeneratorPanel expanded />
+            <div className="flex justify-end border-t border-zinc-800 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  runDemodulation();
+                  setStage('demod');
+                }}
+                className="px-5 py-2.5 bg-zinc-100 hover:bg-white text-black font-semibold text-xs transition-all cursor-pointer"
+              >
+                PROCEED TO DEMODULATION ➔
+              </button>
+            </div>
+          </section>
+        )}
         {/* STAGE 1: SPECTRAL */}
         {activeStage === 'spectral' && (
           <div className="space-y-6">
