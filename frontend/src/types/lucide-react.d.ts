@@ -49,6 +49,7 @@ declare module 'lucide-react' {
   export const Grid3X3: LucideIcon;
   export const AlertTriangle: LucideIcon;
   export const MessageSquareText: LucideIcon;
+  export const Send: LucideIcon;
   export const Copy: LucideIcon;
   export const AlertCircle: LucideIcon;
   export const LoaderCircle: LucideIcon;

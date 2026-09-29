@@ -171,13 +171,12 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/80 px-3 py-2.5 sm:px-6">
         <div className="flex items-center gap-2 text-[11px] text-amber-300">
-<<<<<<< HEAD
           <span className={`h-1.5 w-1.5 rounded-full ${apiStatus === 'connected' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          {apiStatus === 'connected' ? 'FastAPI analysis services connected' : apiStatus === 'checking' ? 'Checking FastAPI analysis services...' : 'FastAPI unavailable - start run_api.py on port 8000'}
-=======
-          <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          {apiOnline ? 'Analysis API connected · upload a capture to run it' : 'Sample preview · connect the SIGMA API to analyze uploaded captures'}
->>>>>>> 0cc662e11b9eeed9419e70aa027b0ee3c0b2bc3b
+          {apiStatus === 'connected'
+            ? 'FastAPI analysis services connected'
+            : apiStatus === 'checking'
+              ? 'Checking FastAPI analysis services...'
+              : 'FastAPI unavailable - start run_api.py on port 8000'}
         </div>
         {pipelineError && <div className="border border-red-900/60 bg-red-950/30 px-3 py-1.5 text-[11px] text-red-300">{pipelineError}</div>}
         <nav className="flex flex-wrap gap-1" aria-label="Workbench areas">
