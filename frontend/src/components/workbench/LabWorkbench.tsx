@@ -27,6 +27,7 @@ import { ModulationType, DeinterleaveMethod, FecCodeType, PipelineStage } from '
 import { downloadDossierPdf } from '../../lib/dossier-pdf';
 import { checkSigmaHealth } from '../../lib/sigma-api';
 import { PdfComparison } from './PdfComparison';
+import { BlockchainFingerprintWorkspace } from './BlockchainFingerprintWorkspace';
 
 interface LabWorkbenchProps {
   onBackToOverview: () => void;
@@ -70,7 +71,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [copied, setCopied] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
-  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'error-control' | 'comparison'>('analysis');
+  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'fingerprinting' | 'error-control' | 'comparison'>('analysis');
 
   const pipelineStages = [
     { id: 'spectral', label: 'SPECTRAL ANALYSIS', icon: Activity },
@@ -181,6 +182,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
         <nav className="flex flex-wrap gap-1" aria-label="Workbench areas">
           <button type="button" onClick={() => setWorkspace('analysis')} aria-current={workspace === 'analysis' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'analysis' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal analysis</button>
           <button type="button" onClick={() => setWorkspace('intelligence')} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>
+          <button type="button" onClick={() => setWorkspace('fingerprinting')} aria-current={workspace === 'fingerprinting' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'fingerprinting' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal fingerprinting</button>
           <button type="button" onClick={() => setWorkspace('error-control')} aria-current={workspace === 'error-control' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'error-control' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Error control lab</button>
           <button type="button" onClick={() => setWorkspace('comparison')} aria-current={workspace === 'comparison' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'comparison' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Compare PDF</button>
         </nav>
@@ -212,6 +214,8 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 space-y-6 p-3 sm:p-6">
         {workspace === 'intelligence' ? (
           <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} />
+        ) : workspace === 'fingerprinting' ? (
+          <BlockchainFingerprintWorkspace capture={uploadedFile} metadata={metadata} spectralData={spectralData} apiResult={apiResult} />
         ) : workspace === 'error-control' ? (
           <ErrorControlLab />
         ) : workspace === 'comparison' ? (
