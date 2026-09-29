@@ -87,7 +87,8 @@ export function Waterfall3D({ frames }: { frames: number[][] }) {
         scene.add(grid);
         const draw = () => {
           if (disposed || !renderer) return;
-          controlsInstance.update();`r`n          surface.rotation.y += 0.0015;
+          controlsInstance.update();
+          surface.rotation.y += 0.0015;
           renderer.render(scene, camera);
           animation = requestAnimationFrame(draw);
         };
