@@ -31,6 +31,7 @@ interface LabWorkbenchProps {
 
 export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const {
+    apiStatus,
     stage,
     setStage,
     metadata,
@@ -59,6 +60,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<'analysis' | 'intelligence'>('analysis');
 
   const pipelineStages = [
@@ -81,8 +83,14 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
 
   const handleRunAll = async () => {
     setIsPipelineRunning(true);
-    await runFullPipeline();
-    setIsPipelineRunning(false);
+    setPipelineError(null);
+    try {
+      await runFullPipeline();
+    } catch (error) {
+      setPipelineError(error instanceof Error ? error.message : 'Pipeline execution failed');
+    } finally {
+      setIsPipelineRunning(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -131,7 +139,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
 
           <div className="flex items-center gap-2 border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] text-zinc-400">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            PREVIEW · API NOT CONNECTED
+            {apiStatus === 'checking' ? 'API CHECKING' : apiStatus === 'connected' ? 'FASTAPI · CONNECTED' : 'FASTAPI · OFFLINE'}
           </div>
 
           <button
@@ -156,8 +164,9 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/80 px-6 py-2.5">
         <div className="flex items-center gap-2 text-[11px] text-amber-300">
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          Frontend preview data · analysis and intelligence services are not connected
+          {apiStatus === 'connected' ? 'FastAPI analysis services connected' : apiStatus === 'checking' ? 'Checking FastAPI analysis services...' : 'FastAPI unavailable - start run_api.py on port 8000'}
         </div>
+        {pipelineError && <div className="border border-red-900/60 bg-red-950/30 px-3 py-1.5 text-[11px] text-red-300">{pipelineError}</div>}
         <nav className="flex gap-1" aria-label="Workbench areas">
           <button type="button" onClick={() => setWorkspace('analysis')} aria-current={workspace === 'analysis' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'analysis' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal analysis</button>
           <button type="button" onClick={() => setWorkspace('intelligence')} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>

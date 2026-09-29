@@ -26,13 +26,12 @@ from fastapi import FastAPI, UploadFile, File, Form, Query, HTTPException, statu
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# Optional PyTorch import with graceful fallback
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    torch = None
-    TORCH_AVAILABLE = False
+# Avoid importing the heavyweight PyTorch runtime during API startup. The
+# legacy API only reports whether it is installed; inference is optional.
+import importlib.util
+
+TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
+torch = None
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -49,6 +48,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# The legacy telecom routes below remain available for existing clients. The
+# modular signal-analysis API is mounted alongside them for the web frontend.
+from backend.api_routes import router as signal_router, analysis_socket
+from backend.db import init_db
+
+init_db()
+app.include_router(signal_router)
+
+
+@app.websocket("/ws/analysis/{analysis_id}")
+async def analysis_progress_socket(websocket, analysis_id: str):
+    """Compatibility path matching the public websocket contract."""
+    await analysis_socket(websocket, analysis_id)
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)

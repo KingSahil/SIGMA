@@ -19,6 +19,9 @@ export function IngestionModal({
   const [selectedPresetId, setSelectedPresetId] = useState('cubesat_qpsk_433');
   const [activeTab, setActiveTab] = useState<'presets' | 'upload'>('presets');
   const [dragOver, setDragOver] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [iqSampleRate, setIqSampleRate] = useState('1000000');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -32,13 +35,26 @@ export function IngestionModal({
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      uploadCustomSignal(e.dataTransfer.files[0]);
+      void handleUpload(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      uploadCustomSignal(e.target.files[0]);
+      void handleUpload(e.target.files[0]);
+    }
+  };
+
+  const handleUpload = async (file: File) => {
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const rate = file.name.toLowerCase().endsWith('.iq') ? Number(iqSampleRate) : undefined;
+      await uploadCustomSignal(file, rate);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Signal upload failed');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -153,6 +169,10 @@ export function IngestionModal({
             </div>
           ) : (
             <div>
+              <label className="mb-2 block text-[11px] text-slate-400">
+                IQ sample rate (Hz)
+                <input value={iqSampleRate} onChange={(e) => setIqSampleRate(e.target.value)} inputMode="numeric" className="ml-2 w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200" />
+              </label>
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -189,6 +209,8 @@ export function IngestionModal({
                     Loaded: {metadata.name} ({(metadata.sizeBytes / (1024 * 1024)).toFixed(1)} MB)
                   </div>
                 )}
+                {isUploading && <p className="mt-3 text-xs text-cyan-400">Uploading signal...</p>}
+                {uploadError && <p className="mt-3 text-xs text-red-400">{uploadError}</p>}
               </div>
             </div>
           )}
@@ -205,6 +227,7 @@ export function IngestionModal({
 
           <button
             onClick={handleProceed}
+            disabled={isUploading}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
           >
             <span>Load Signal</span>

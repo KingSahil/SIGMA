@@ -29,6 +29,7 @@ import {
 } from '../lib/dsp-mock';
 
 interface SignalContextType {
+  apiStatus: 'checking' | 'connected' | 'disconnected';
   // Navigation & System
   stage: PipelineStage;
   setStage: (stage: PipelineStage) => void;
@@ -39,7 +40,7 @@ interface SignalContextType {
   metadata: SignalMetadata | null;
   presets: PresetSignalOption[];
   loadPreset: (presetId: string) => void;
-  uploadCustomSignal: (file: File) => void;
+  uploadCustomSignal: (file: File, sampleRateHz?: number) => Promise<void>;
 
   // Analysis State
   spectralData: SpectralAnalysisResult | null;
@@ -86,6 +87,9 @@ interface SignalContextType {
 const SignalContext = createContext<SignalContextType | undefined>(undefined);
 
 export function SignalProvider({ children }: { children: ReactNode }) {
+  const apiBase = (process.env.NEXT_PUBLIC_SIGMA_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+  const wsBase = (process.env.NEXT_PUBLIC_SIGMA_WS_URL || apiBase.replace(/^http/, 'ws')).replace(/\/$/, '');
+  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
   // Navigation
   const [stage, setStage] = useState<PipelineStage>('spectral');
   const [mode, setMode] = useState<SystemMode>('simulation');
@@ -98,6 +102,8 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   const [waterfallFrames, setWaterfallFrames] = useState<WaterfallFrame[]>([]);
   const [constellationPoints, setConstellationPoints] = useState<ConstellationPoint[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [backendSignalId, setBackendSignalId] = useState<string | null>(null);
+  const [backendAnalysisId, setBackendAnalysisId] = useState<string | null>(null);
 
   // Demod
   const [demodData, setDemodData] = useState<DemodulationResult | null>(null);
@@ -119,6 +125,21 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   // Correlation
   const [correlationData, setCorrelationData] = useState<CorrelationResult | null>(null);
   const [isCorrelating, setIsCorrelating] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkApi = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/health`, { signal: AbortSignal.timeout(2500) });
+        if (!response.ok) throw new Error('API health check failed');
+        if (!cancelled) setApiStatus('connected');
+      } catch {
+        if (!cancelled) setApiStatus('disconnected');
+      }
+    };
+    void checkApi();
+    return () => { cancelled = true; };
+  }, [apiBase]);
 
   // Auto-load default preset on first launch
   useEffect(() => {
@@ -159,34 +180,30 @@ export function SignalProvider({ children }: { children: ReactNode }) {
     setCorrelationData(null);
   };
 
-  const uploadCustomSignal = (file: File) => {
-    const ext = file.name.endsWith('.wav') ? '.wav' : file.name.endsWith('.bin') ? '.bin' : '.iq';
-    const sampleRate = ext === '.wav' ? 1200000 : 2400000;
-    const centerFreq = 433920000;
-    const duration = Number((file.size / (sampleRate * 4)).toFixed(2)) || 2.5;
-
-    const newMeta: SignalMetadata = {
-      id: `custom_${Date.now()}`,
-      name: file.name,
-      format: ext,
-      sizeBytes: file.size,
-      sampleRateHz: sampleRate,
-      centerFreqHz: centerFreq,
-      durationSeconds: duration,
-      totalSamples: Math.floor(sampleRate * duration),
-      isPreset: false,
-    };
-
-    setMetadata(newMeta);
-
-    // Initial mock analysis for custom file
-    const spec = generateMockSpectrum(centerFreq / 1e6, 1.8, 18.0);
-    const constPts = generateMockConstellation('QPSK', 500, 18.0);
-    const wf = generateMockWaterfall(48, 128);
-
-    setSpectralData(spec);
-    setConstellationPoints(constPts);
-    setWaterfallFrames(wf);
+  const uploadCustomSignal = async (file: File, sampleRateHz?: number) => {
+    const form = new FormData();
+    form.append('file', file);
+    if (file.name.toLowerCase().endsWith('.iq')) {
+      form.append('iq_format', 'complex64');
+      if (sampleRateHz && sampleRateHz > 0) form.append('sample_rate', String(sampleRateHz));
+    }
+    const response = await fetch(`${apiBase}/api/signals/upload`, { method: 'POST', body: form });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) throw new Error(payload?.error?.message || payload?.detail?.error?.message || 'Signal upload failed');
+    const uploaded = payload.data;
+    const info = uploaded.metadata;
+    const ext = file.name.toLowerCase().endsWith('.wav') ? '.wav' : '.iq';
+    setBackendSignalId(uploaded.signal_id);
+    setBackendAnalysisId(null);
+    setMetadata({
+      id: uploaded.signal_id, name: uploaded.filename, format: ext,
+      sizeBytes: file.size, sampleRateHz: info.sample_rate || 0,
+      centerFreqHz: info.center_frequency || 0, durationSeconds: info.duration || 0,
+      totalSamples: info.num_samples || 0, isPreset: false,
+    });
+    setSpectralData(null);
+    setConstellationPoints([]);
+    setWaterfallFrames([]);
 
     setDemodData(null);
     setDeinterleaveData(null);
@@ -196,14 +213,71 @@ export function SignalProvider({ children }: { children: ReactNode }) {
 
   const runSpectralAnalysis = async () => {
     setIsAnalyzing(true);
-    await new Promise((r) => setTimeout(r, 600)); // realistic compute delay
-    if (metadata) {
-      const centerMhz = metadata.centerFreqHz / 1e6;
-      setSpectralData(generateMockSpectrum(centerMhz, 1.8, 18.4));
-      setConstellationPoints(generateMockConstellation(selectedModulation, 600, 18.4));
-      setWaterfallFrames(generateMockWaterfall(64, 128));
+    try {
+      if (!backendSignalId || !metadata) throw new Error('Upload a signal file before starting analysis.');
+      const create = await fetch(`${apiBase}/api/analysis`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signal_id: backendSignalId, sample_rate: metadata.sampleRateHz || undefined, center_frequency: metadata.centerFreqHz || undefined, iq_format: metadata.format === '.iq' ? 'complex64' : undefined }),
+      });
+      const created = await create.json();
+      if (!create.ok || !created.success) throw new Error(created?.error?.message || created?.detail?.error?.message || 'Analysis could not be queued');
+      const analysisId = created.data.analysis_id;
+      setBackendAnalysisId(analysisId);
+      let result: any = null;
+      let socket: WebSocket | null = null;
+      let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+      let reconnects = 0;
+      const closeSocket = () => {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        socket?.close();
+        socket = null;
+      };
+      const connectProgress = () => {
+        if (typeof WebSocket === 'undefined' || reconnects >= 5) return;
+        try {
+          socket = new WebSocket(`${wsBase}/ws/analysis/${analysisId}`);
+          socket.onopen = () => { reconnects = 0; };
+          socket.onmessage = (event) => {
+            try {
+              const update = JSON.parse(event.data);
+              if (update.status === 'FAILED') closeSocket();
+            } catch { /* status polling remains the source of truth */ }
+          };
+          socket.onerror = () => socket?.close();
+          socket.onclose = () => {
+            if (!result && reconnects < 5) {
+              reconnects += 1;
+              reconnectTimer = setTimeout(connectProgress, Math.min(5000, 500 * 2 ** reconnects));
+            }
+          };
+        } catch {
+          reconnects += 1;
+        }
+      };
+      connectProgress();
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const status = await fetch(`${apiBase}/api/analysis/${analysisId}`);
+        const body = await status.json();
+        if (body.data?.job?.status === 'FAILED') throw new Error(body.data.job.error || 'Signal analysis failed');
+        if (body.data?.result) { result = body.data.result; break; }
+      }
+      closeSocket();
+      if (!result) throw new Error('Analysis timed out');
+      const spectrum = result.spectrum;
+      setSpectralData({
+        frequencies: spectrum.frequencies.map((f: number) => (f + (result.center_frequency || 0)) / 1e6),
+        powerDbfs: spectrum.power, peakFreqMhz: (result.peak_frequency || 0) / 1e6,
+        estimatedCarrierMhz: result.carrier_frequency ? result.carrier_frequency / 1e6 : 0,
+        bandwidthMhz: (result.bandwidth || 0) / 1e6, snrDb: result.snr,
+        noiseFloorDbfs: result.noise_power, estimatedModulation: result.classification.modulation || 'QPSK', confidence: result.classification.confidence || 0, rolloffFactor: 0,
+      });
+      setConstellationPoints(result.constellation.i.map((i: number, index: number) => ({ i, q: result.constellation.q[index] })));
+      const matrix = result.spectrogram.power;
+      setWaterfallFrames(matrix[0]?.map((_: number, index: number) => ({ timestamp: result.spectrogram.time[index] || index, bins: matrix.map((row: number[]) => row[index] || -120) })) || []);
+    } finally {
+      setIsAnalyzing(false);
     }
-    setIsAnalyzing(false);
   };
 
   const runDemodulation = async (mod?: ModulationType) => {
