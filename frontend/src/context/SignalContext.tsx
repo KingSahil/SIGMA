@@ -196,30 +196,20 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   };
 
   const uploadCustomSignal = async (file: File, sampleRateHz?: number, centerFreqHz?: number) => {
-    const form = new FormData();
-    form.append('file', file, file.name);
-    if (file.name.toLowerCase().endsWith('.iq')) {
-      form.append('iq_format', 'complex64');
-      if (sampleRateHz && sampleRateHz > 0) form.append('sample_rate', String(sampleRateHz));
-    }
-    const response = await fetch(`${apiBase}/api/signals/upload`, { method: 'POST', body: form });
-    const payload = await response.json();
-    if (!response.ok || !payload.success) throw new Error(payload?.error?.message || payload?.detail?.error?.message || 'Signal upload failed');
-    const uploaded = payload.data;
-    const info = uploaded.metadata;
-    const ext = file.name.toLowerCase().endsWith('.wav') ? '.wav' : '.iq';
-    const resolvedRate = info.sample_rate || sampleRateHz || 0;
-    setBackendSignalId(uploaded.signal_id);
+    const lowerName = file.name.toLowerCase();
+    const ext = lowerName.endsWith('.wav') ? '.wav' : lowerName.endsWith('.bin') ? '.bin' : '.iq';
+    const resolvedRate = sampleRateHz || 0;
+    setBackendSignalId(null);
     setBackendAnalysisId(null);
     setUploadedFile(file);
     setApiResult(null);
     setApiPlots(null);
     setApiError(null);
     setMetadata({
-      id: uploaded.signal_id, name: uploaded.filename, format: ext,
+      id: `upload-${Date.now()}`, name: file.name, format: ext,
       sizeBytes: file.size, sampleRateHz: resolvedRate,
-      centerFreqHz: centerFreqHz || info.center_frequency || 0, durationSeconds: info.duration || 0,
-      totalSamples: info.num_samples || 0, isPreset: false,
+      centerFreqHz: centerFreqHz || 0, durationSeconds: resolvedRate ? file.size / (ext === '.wav' ? 2 : 8) / resolvedRate : 0,
+      totalSamples: Math.floor(file.size / (ext === '.wav' ? 2 : 8)), isPreset: false,
     });
     setSpectralData(null);
     setConstellationPoints([]);
@@ -234,6 +224,29 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   const runSpectralAnalysis = async () => {
     setIsAnalyzing(true);
     try {
+      if (uploadedFile && metadata) {
+        setApiBusy(true);
+        setApiError(null);
+        try {
+          const recovered = await recoverSignal(uploadedFile, { sampleRate: metadata.sampleRateHz || 1000000, centerFrequency: metadata.centerFreqHz || 0 });
+          setApiResult(recovered);
+          setApiPlots(null);
+          const input = recovered.input_metadata;
+          if (input) setMetadata((current) => current ? {
+            ...current,
+            sampleRateHz: input.sample_rate || current.sampleRateHz,
+            centerFreqHz: input.center_frequency ?? current.centerFreqHz,
+            durationSeconds: input.duration_seconds || current.durationSeconds,
+            totalSamples: input.num_samples || current.totalSamples,
+          } : current);
+        } catch (error) {
+          setApiError(error instanceof Error ? error.message : 'Signal analysis failed');
+          throw error;
+        } finally {
+          setApiBusy(false);
+        }
+        return;
+      }
       if (!backendSignalId || !metadata) throw new Error('Upload a signal file before starting analysis.');
       const create = await fetch(`${apiBase}/api/analysis`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

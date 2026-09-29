@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
-import { Upload, X, ArrowRight, Check } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, X, ArrowRight, Check, Play, Pause } from 'lucide-react';
 import { useSignal } from '../../context/SignalContext';
 
 interface IngestionModalProps {
@@ -25,6 +25,20 @@ export function IngestionModal({
   const [centerFrequencyMhz, setCenterFrequencyMhz] = useState(433.92);
   const [loadedFile, setLoadedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState('');
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!loadedFile || !loadedFile.name.toLowerCase().endsWith('.wav')) {
+      setAudioPreviewUrl('');
+      setIsPreviewPlaying(false);
+      return;
+    }
+    const url = URL.createObjectURL(loadedFile);
+    setAudioPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [loadedFile]);
 
   if (!isOpen) return null;
 
@@ -34,6 +48,13 @@ export function IngestionModal({
   };
 
   const loadFile = async (file: File) => {
+    const extension = file.name.toLowerCase().split('.').pop();
+    if (!['wav', 'iq', 'bin', 'raw'].includes(extension ?? '')) {
+      setUploadError('Choose a WAV audio file or an IQ/BIN/RAW capture.');
+      setLoadedFile(null);
+      return;
+    }
+    setUploadError(null);
     let detectedRate = sampleRate;
     if (file.name.toLowerCase().endsWith('.wav')) {
       try {
@@ -58,6 +79,19 @@ export function IngestionModal({
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       void loadFile(e.target.files[0]);
+    }
+    e.target.value = '';
+  };
+  const toggleAudioPreview = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      try { await audio.play(); setIsPreviewPlaying(true); }
+      catch { setUploadError('This WAV file could not be played by the browser.'); }
+    } else {
+      audio.pause();
+      setIsPreviewPlaying(false);
     }
   };
 
@@ -184,6 +218,10 @@ export function IngestionModal({
             </div>
           ) : (
             <div>
+              <label className="mb-2 block text-[11px] text-slate-400">
+                IQ sample rate (Hz)
+                <input value={sampleRate} onChange={(e) => { const value = Number(e.target.value); if (Number.isFinite(value) && value > 0) setSampleRate(value); }} inputMode="numeric" className="ml-2 w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200" />
+              </label>
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -216,8 +254,9 @@ export function IngestionModal({
                 </p>
 
                 {(loadedFile || (metadata && !metadata.isPreset)) && (
-                  <div className="mt-3 px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-400">
-                    Selected: {loadedFile?.name ?? metadata?.name} ({((loadedFile?.size ?? metadata?.sizeBytes ?? 0) / (1024 * 1024)).toFixed(1)} MB)
+                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-400">
+                    <span>Selected: {loadedFile?.name ?? metadata?.name} ({((loadedFile?.size ?? metadata?.sizeBytes ?? 0) / (1024 * 1024)).toFixed(1)} MB)</span>
+                    {loadedFile?.name.toLowerCase().endsWith('.wav') && <button type="button" onClick={toggleAudioPreview} className="inline-flex items-center gap-1.5 border border-emerald-500/30 px-2 py-1 text-[11px] text-emerald-200 hover:bg-emerald-500/10" aria-label={isPreviewPlaying ? 'Pause WAV preview' : 'Play WAV preview'}>{isPreviewPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />} {isPreviewPlaying ? 'Pause' : 'Play audio'}</button>}
                   </div>
                 )}
                 {isUploading && <p className="mt-3 text-xs text-cyan-400">Uploading signal...</p>}
@@ -236,6 +275,8 @@ export function IngestionModal({
           )}
         </div>
 
+        {audioPreviewUrl && <audio ref={audioRef} src={audioPreviewUrl} preload="metadata" onEnded={() => setIsPreviewPlaying(false)} onPause={() => setIsPreviewPlaying(false)} className="hidden" />}
+
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-800/80 bg-slate-900/30">
           <button
@@ -247,7 +288,7 @@ export function IngestionModal({
 
           <button
             onClick={handleProceed}
-            disabled={isUploading}
+            disabled={isUploading || (activeTab === 'upload' && !loadedFile)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
           >
             <span>Load Signal</span>

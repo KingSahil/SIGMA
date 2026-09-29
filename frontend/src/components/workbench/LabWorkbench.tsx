@@ -26,6 +26,8 @@ import { ErrorControlLab } from './ErrorControlLab';
 import { ModulationType, DeinterleaveMethod, FecCodeType, PipelineStage } from '../../lib/dsp-types';
 import { downloadDossierPdf } from '../../lib/dossier-pdf';
 import { PdfComparison } from './PdfComparison';
+import { SignalGeneratorPanel } from './SignalGeneratorPanel';
+import { BlockchainFingerprintWorkspace } from './BlockchainFingerprintWorkspace';
 
 interface LabWorkbenchProps {
   onBackToOverview: () => void;
@@ -69,22 +71,24 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [copied, setCopied] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
-  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'error-control' | 'comparison'>('analysis');
+  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'fingerprinting' | 'error-control' | 'comparison'>('analysis');
+  const apiOnline = apiStatus === 'connected';
 
   const pipelineStages = [
     { id: 'spectral', label: 'SPECTRAL ANALYSIS', icon: Activity },
+    { id: 'modulation', label: 'MODULATION', icon: Radio },
     { id: 'demod', label: 'DEMODULATION', icon: Cpu },
     { id: 'deinterleave', label: 'DE-INTERLEAVING', icon: Layers },
     { id: 'fec', label: 'FEC DECODING', icon: FileCheck2 },
     { id: 'correlate', label: 'FRAME CORRELATION', icon: FileCode2 },
   ] as const;
 
-  const activeStage = ['spectral', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)
+  const activeStage = ['spectral', 'modulation', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)
     ? stage
     : 'spectral';
 
   useEffect(() => {
-    if (!['spectral', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)) {
+    if (!['spectral', 'modulation', 'demod', 'deinterleave', 'fec', 'correlate'].includes(stage)) {
       setStage('spectral');
     }
   }, [stage, setStage]);
@@ -182,6 +186,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
         <nav className="flex flex-wrap gap-1" aria-label="Workbench areas">
           <button type="button" onClick={() => setWorkspace('analysis')} aria-current={workspace === 'analysis' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'analysis' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal analysis</button>
           <button type="button" onClick={() => setWorkspace('intelligence')} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>
+          <button type="button" onClick={() => setWorkspace('fingerprinting')} aria-current={workspace === 'fingerprinting' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'fingerprinting' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal fingerprinting</button>
           <button type="button" onClick={() => setWorkspace('error-control')} aria-current={workspace === 'error-control' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'error-control' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Error control lab</button>
           <button type="button" onClick={() => setWorkspace('comparison')} aria-current={workspace === 'comparison' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'comparison' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Compare PDF</button>
         </nav>
@@ -213,12 +218,14 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 space-y-6 p-3 sm:p-6">
         {workspace === 'intelligence' ? (
           <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} />
+        ) : workspace === 'fingerprinting' ? (
+          <BlockchainFingerprintWorkspace capture={uploadedFile} metadata={metadata} spectralData={spectralData} apiResult={apiResult} />
         ) : workspace === 'error-control' ? (
           <ErrorControlLab />
         ) : workspace === 'comparison' ? (
           <PdfComparison result={apiResult} metadata={metadata} />
         ) : <>
-        {uploadedFile ? (
+        {uploadedFile && activeStage !== 'modulation' ? (
           <div className="space-y-5">
             <section className="border border-zinc-800 bg-[#0c0c0e] p-4 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 pb-4">
@@ -255,6 +262,28 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
             </div> : uploadedFile && apiResult && metadata?.format !== '.iq' ? <p className="border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-zinc-500">The current visualization endpoint accepts raw float32 IQ, so plots are not returned for this file type. Recovery results above are from the WAV analysis endpoint.</p> : null}
           </div>
         ) : <>
+        {activeStage === 'modulation' && (
+          <section className="space-y-5">
+            <div className="border border-zinc-800 bg-[#0c0c0e] p-5 sm:p-6">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-cyan-400">Stage 02 · Transmitter</p>
+              <h2 className="mt-2 text-lg font-semibold text-white">Modulation & IQ generation</h2>
+              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-zinc-400">Choose a digital modulation scheme and channel conditions to create a synthetic IQ capture. Generated samples can be downloaded for analysis and demodulation.</p>
+            </div>
+            <SignalGeneratorPanel expanded />
+            <div className="flex justify-end border-t border-zinc-800 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  runDemodulation();
+                  setStage('demod');
+                }}
+                className="px-5 py-2.5 bg-zinc-100 hover:bg-white text-black font-semibold text-xs transition-all cursor-pointer"
+              >
+                PROCEED TO DEMODULATION ➔
+              </button>
+            </div>
+          </section>
+        )}
         {/* STAGE 1: SPECTRAL */}
         {activeStage === 'spectral' && (
           <div className="space-y-6">

@@ -113,7 +113,7 @@ export async function analyzeRawIq(file: File, settings: { sampleRate: number; m
 
 export async function generateSignal(settings: {
   modulation: string; sps: number; snr_db: number; cfo_hz: number;
-  phase_offset_deg: number; samp_rate: number;
+  phase_offset_deg: number; samp_rate: number; num_samples: number;
 }) {
   const response = await fetch(`${apiBase}/api/modulate`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings),
