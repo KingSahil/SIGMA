@@ -36,20 +36,32 @@ export function Waterfall3D({ frames }: { frames: number[][] }) {
         controlsInstance.target.set(0, 0.1, 0);
         controls = controlsInstance;
 
-        const rows = Math.min(32, frames.length);
-        const columns = Math.min(96, Math.min(...frames.map((row) => row.length)));
+        const validFrames = frames.filter((row) => row.length > 0);
+        if (!validFrames.length) throw new Error('Waterfall has no populated rows');
+        const rows = Math.min(32, validFrames.length);
+        const columns = Math.min(96, Math.min(...validFrames.map((row) => row.length)));
+        if (columns < 2) throw new Error('Waterfall has too few frequency bins');
         const positions = new Float32Array(rows * columns * 3);
         const colors = new Float32Array(rows * columns * 3);
-        const low = Math.min(...frames.flatMap((row) => row.slice(0, columns)));
-        const high = Math.max(...frames.flatMap((row) => row.slice(0, columns)));
+        let low = Number.POSITIVE_INFINITY;
+        let high = Number.NEGATIVE_INFINITY;
+        for (const row of validFrames) {
+          for (let col = 0; col < columns; col += 1) {
+            const value = Number(row[col]);
+            if (!Number.isFinite(value)) continue;
+            low = Math.min(low, value);
+            high = Math.max(high, value);
+          }
+        }
         const span = Math.max(1, high - low);
-        for (let row = 0; row < rows; row++) {
-          const sourceRow = frames[Math.floor((row / Math.max(1, rows - 1)) * (frames.length - 1))];
-          for (let col = 0; col < columns; col++) {
+        for (let row = 0; row < rows; row += 1) {
+          const sourceRow = validFrames[Math.floor((row / Math.max(1, rows - 1)) * (validFrames.length - 1))];
+          for (let col = 0; col < columns; col += 1) {
             const sourceCol = Math.floor((col / Math.max(1, columns - 1)) * (sourceRow.length - 1));
             const index = row * columns + col;
-            const intensity = (sourceRow[sourceCol] - low) / span;
-            positions[index * 3] = col / Math.max(1, columns - 1) - 0.5;
+            const value = Number(sourceRow[sourceCol]);
+            const intensity = Number.isFinite(value) ? Math.max(0, Math.min(1, (value - low) / span)) : 0;
+            positions[index * 3] = col / (columns - 1) - 0.5;
             positions[index * 3 + 1] = intensity * 0.55;
             positions[index * 3 + 2] = row / Math.max(1, rows - 1) - 0.5;
             const color = new THREE.Color().setHSL(0.56 - intensity * 0.45, 0.86, 0.18 + intensity * 0.52);
@@ -59,7 +71,7 @@ export function Waterfall3D({ frames }: { frames: number[][] }) {
           }
         }
         const indices: number[] = [];
-        for (let row = 0; row < rows - 1; row++) for (let col = 0; col < columns - 1; col++) {
+        for (let row = 0; row < rows - 1; row += 1) for (let col = 0; col < columns - 1; col += 1) {
           const a = row * columns + col;
           const b = a + columns;
           indices.push(a, b, a + 1, b, b + 1, a + 1);
@@ -68,7 +80,6 @@ export function Waterfall3D({ frames }: { frames: number[][] }) {
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         geometry.setIndex(indices);
-        geometry.computeVertexNormals();
         const surface = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ vertexColors: true, wireframe: true }));
         scene.add(surface);
         const grid = new THREE.GridHelper(1.2, 12, '#155e75', '#27272a');

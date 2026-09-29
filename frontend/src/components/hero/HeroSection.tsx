@@ -56,7 +56,7 @@ export function HeroSection({
       <div className="absolute top-1/3 right-10 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Navigation */}
-      <HeroNavbar onOpenLab={onOpenLab} />
+      <HeroNavbar onOpenLab={onOpenLab} active="home" />
 
       {/* Hero Center Grid */}
       <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-8 px-4 pt-4 pb-12 sm:px-6 lg:gap-10 lg:px-8 lg:pb-16 xl:grid-cols-12 xl:gap-12 xl:px-12">

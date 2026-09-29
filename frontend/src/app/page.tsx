@@ -24,12 +24,13 @@ function MainApp() {
     <div className="min-h-screen bg-[#040814] text-white">
       {viewMode === 'hero' ? (
         <>
-          <HeroSection
-            onOpenLab={handleOpenWorkbench}
-            onUploadSignal={handleOpenIngest}
-            onWatchDemo={handleOpenWorkbench}
-          />
-
+          <div id="home">
+            <HeroSection
+              onOpenLab={handleOpenWorkbench}
+              onUploadSignal={handleOpenIngest}
+              onWatchDemo={handleOpenWorkbench}
+            />
+          </div>
           <IngestionModal
             isOpen={isIngestOpen}
             onClose={() => setIsIngestOpen(false)}

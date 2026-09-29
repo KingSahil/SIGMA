@@ -15,6 +15,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 /* Keep layouts predictable when browser zoom or display scaling changes. */
 html,
 body {
@@ -53,4 +57,16 @@ code, kbd, samp, pre, .font-mono {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
+}
+
+/* Route-specific landing views keep the shared visual system while exposing one page at a time. */
+.landing-sections--features > section:not(#features),
+.landing-sections--how-it-works > section:not(#how-it-works),
+.landing-sections--use-cases > section:not(#use-cases),
+.landing-sections--about > section:not(#about) {
+  display: none;
+}
+
+.landing-sections--features > section:nth-child(2) {
+  display: block !important;
 }
