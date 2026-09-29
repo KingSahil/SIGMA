@@ -22,7 +22,8 @@ import { InstrumentConstellation } from '../visualizers/InstrumentConstellation'
 import { IngestionModal } from '../modules/IngestionModal';
 import { IntelligenceWorkspace } from './IntelligenceWorkspace';
 import { HammingDemo } from './HammingDemo';
-import { ModulationType, DeinterleaveMethod, FecCodeType } from '../../lib/dsp-types';
+import { ErrorControlLab } from './ErrorControlLab';
+import { ModulationType, DeinterleaveMethod, FecCodeType, PipelineStage } from '../../lib/dsp-types';
 import { downloadDossierPdf } from '../../lib/dossier-pdf';
 
 interface LabWorkbenchProps {
@@ -59,7 +60,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
-  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence'>('analysis');
+  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'error-control'>('analysis');
 
   const pipelineStages = [
     { id: 'spectral', label: 'SPECTRAL ANALYSIS', icon: Activity },
@@ -161,6 +162,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
         <nav className="flex gap-1" aria-label="Workbench areas">
           <button type="button" onClick={() => setWorkspace('analysis')} aria-current={workspace === 'analysis' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'analysis' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal analysis</button>
           <button type="button" onClick={() => setWorkspace('intelligence')} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>
+          <button type="button" onClick={() => setWorkspace('error-control')} aria-current={workspace === 'error-control' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'error-control' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Error control lab</button>
         </nav>
       </div>
 
@@ -172,7 +174,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
           return (
             <button
               key={st.id}
-              onClick={() => setStage(st.id as any)}
+              onClick={() => setStage(st.id as PipelineStage)}
               className={`flex items-center gap-2 py-3 px-5 border-b-2 transition-all cursor-pointer whitespace-nowrap text-xs ${
                 isActive
                   ? 'border-cyan-400 text-white bg-zinc-900/40 font-bold'
@@ -190,6 +192,8 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
         {workspace === 'intelligence' ? (
           <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} />
+        ) : workspace === 'error-control' ? (
+          <ErrorControlLab />
         ) : <>
         {/* STAGE 1: SPECTRAL */}
         {activeStage === 'spectral' && (
@@ -615,7 +619,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
               <div className="p-4">
                 <span className="text-zinc-500 text-[10px] block uppercase">EXTRACTED PAYLOAD ASCII</span>
                 <span className="text-sm font-bold text-emerald-400 mt-1 block font-mono">
-                  "{correlationData?.extractedPayloadAscii || 'Hello Satellite Telemetry'}"
+                  &quot;{correlationData?.extractedPayloadAscii || 'Hello Satellite Telemetry'}&quot;
                 </span>
                 <span className="text-zinc-500 text-[10px] mt-0.5 block">25 Bytes Decoded</span>
               </div>

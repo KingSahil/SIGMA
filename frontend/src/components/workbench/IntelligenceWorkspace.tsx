@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRight, Check, FileText, MessageSquareText, Radio, Search, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ArrowRight, Check, Download, FileText, MessageSquareText, Radio, Search, Sparkles } from 'lucide-react';
 import { SignalMetadata, SpectralAnalysisResult } from '../../lib/dsp-types';
 import { downloadDossierPdf, DossierSignal } from '../../lib/dossier-pdf';
 
-type WorkspaceView = 'signals' | 'analyst' | 'reports';
+type WorkspaceView = 'signals' | 'model' | 'analyst' | 'reports';
 
 const sampleSignals: DossierSignal[] = [
   { id: 'SIG-01', modulation: 'QPSK', frequency: '433.92 MHz', bandwidth: '120 kHz', snr: '17.3 dB', state: 'Known class' },
@@ -15,6 +15,15 @@ const sampleSignals: DossierSignal[] = [
 
 const cardClass = 'border border-zinc-800 bg-[#0c0c0e]';
 const mutedLabel = 'text-[10px] uppercase tracking-[0.14em] text-zinc-500';
+const feedbackStorageKey = 'sigma-analyst-reviews-v1';
+
+interface AnalystReview {
+  id: string;
+  signalId: string;
+  label: string;
+  notes: string;
+  createdAt: string;
+}
 
 interface IntelligenceWorkspaceProps {
   metadata: SignalMetadata | null;
@@ -29,7 +38,20 @@ export function IntelligenceWorkspace({ metadata, spectralData }: IntelligenceWo
   const [feedbackLabel, setFeedbackLabel] = useState('QPSK');
   const [feedbackNote, setFeedbackNote] = useState('');
   const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [reviews, setReviews] = useState<AnalystReview[]>([]);
   const [reportSaved, setReportSaved] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(feedbackStorageKey);
+        if (saved) setReviews(JSON.parse(saved) as AnalystReview[]);
+      } catch {
+        setReviews([]);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const activeSignal = useMemo(
     () => sampleSignals.find((signal) => signal.id === selectedSignal) ?? sampleSignals[0],
@@ -50,7 +72,18 @@ export function IntelligenceWorkspace({ metadata, spectralData }: IntelligenceWo
 
   const saveFeedback = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const review: AnalystReview = { id: crypto.randomUUID(), signalId: activeSignal.id, label: feedbackLabel, notes: feedbackNote.trim(), createdAt: new Date().toISOString() };
+    const updated = [review, ...reviews];
+    setReviews(updated);
+    try { window.localStorage.setItem(feedbackStorageKey, JSON.stringify(updated)); } catch { /* Browser storage may be disabled. */ }
     setFeedbackSaved(true);
+  };
+
+  const downloadReviews = () => {
+    const quote = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const csv = ['Review ID,Signal,Analyst label,Notes,Created at', ...reviews.map((review) => [review.id, review.signalId, review.label, review.notes, review.createdAt].map(quote).join(','))].join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'sigma-analyst-reviews.csv'; anchor.click(); URL.revokeObjectURL(url);
   };
 
   return (
@@ -64,6 +97,7 @@ export function IntelligenceWorkspace({ metadata, spectralData }: IntelligenceWo
         <div className="flex flex-wrap gap-1 border border-zinc-800 bg-zinc-950 p-1" role="tablist" aria-label="Investigation views">
           {([
             ['signals', 'Signals'],
+            ['model', 'Model lab'],
             ['analyst', 'AI analyst'],
             ['reports', 'Reports'],
           ] as const).map(([id, label]) => (
@@ -140,6 +174,23 @@ export function IntelligenceWorkspace({ metadata, spectralData }: IntelligenceWo
         </div>
       )}
 
+      {view === 'model' && (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+            <section className={`${cardClass} p-4 sm:p-5`}>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><p className={mutedLabel}>Multimodal classifier</p><h3 className="mt-1 text-sm font-semibold text-white">Feature fusion pipeline</h3></div><span className="border border-amber-900/60 bg-amber-950/20 px-2 py-1 text-[10px] text-amber-300">MODEL SERVICE NOT CONNECTED</span></div>
+              <div className="mt-5 grid gap-2 md:grid-cols-3">
+                {[["01", "IQ samples", "Complex baseband windows"], ["02", "Spectrogram", "Time-frequency features"], ["03", "Constellation", "Symbol geometry features"]].map(([step, title, body]) => <div key={step} className="border border-zinc-800 bg-zinc-950 p-3"><span className="font-mono text-[10px] text-cyan-400">{step}</span><h4 className="mt-2 text-xs font-medium text-white">{title}</h4><p className="mt-1 text-[11px] text-zinc-500">{body}</p><p className="mt-3 border-t border-zinc-800 pt-2 text-[10px] text-zinc-600">Input status · awaiting service</p></div>)}
+              </div>
+              <div className="my-3 flex items-center justify-center text-[10px] uppercase tracking-wider text-zinc-600">Feature fusion ↓</div>
+              <div className="border border-cyan-950 bg-cyan-950/10 p-4 text-center"><p className="text-xs font-medium text-cyan-100">CNN / CRNN / transformer candidate</p><p className="mt-1 text-[11px] text-zinc-500">Training and inference are not available in the web client.</p></div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="border border-zinc-800 p-3"><p className={mutedLabel}>Modulation outputs</p><p className="mt-2 text-xs text-zinc-400">BPSK · QPSK · 8PSK · FSK · QAM · Unknown</p><p className="mt-2 text-[10px] text-zinc-600">No probabilities returned</p></div><div className="border border-zinc-800 p-3"><p className={mutedLabel}>Novelty / confidence</p><p className="mt-2 text-xs text-zinc-400">Requires a calibrated model and reference embeddings.</p><p className="mt-2 text-[10px] text-zinc-600">No scores returned</p></div></div>
+            </section>
+            <aside className={`${cardClass} p-4 sm:p-5`}><p className={mutedLabel}>Dataset & training readiness</p><h3 className="mt-1 text-sm font-semibold text-white">Model registry</h3><dl className="mt-4 divide-y divide-zinc-800 border-y border-zinc-800">{[["Training datasets", "Not connected"], ["Active model version", "Not available"], ["Evaluation metrics", "Not available"], ["Label queue", `${reviews.length} local reviews`]].map(([label, value]) => <div key={label} className="flex justify-between gap-3 py-3 text-xs"><dt className="text-zinc-500">{label}</dt><dd className="text-zinc-300">{value}</dd></div>)}</dl><p className="mt-4 font-sans text-[11px] leading-relaxed text-zinc-500">Analyst labels saved in this browser can be exported from the AI analyst view. Model training requires a dataset registry and training service.</p></aside>
+          </div>
+        </div>
+      )}
+
       {view === 'analyst' && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.78fr)]">
           <section className={`${cardClass} p-4 sm:p-5`}>
@@ -156,13 +207,17 @@ export function IntelligenceWorkspace({ metadata, spectralData }: IntelligenceWo
           <section className={`${cardClass} p-4 sm:p-5`}>
             <p className={mutedLabel}>Analyst feedback</p>
             <h3 className="mt-1 text-sm font-semibold text-white">Review {activeSignal.id}</h3>
-            <p className="mt-2 font-sans text-xs text-zinc-500">Record a correction for this session. Persistent dataset submission needs a backend connection.</p>
+            <p className="mt-2 font-sans text-xs text-zinc-500">Reviews persist in this browser and can be exported for dataset curation. They are not sent to a training service.</p>
             <form className="mt-4 space-y-3" onSubmit={saveFeedback}>
               <label className="block text-xs text-zinc-400">Analyst label<select value={feedbackLabel} onChange={(event) => { setFeedbackLabel(event.target.value); setFeedbackSaved(false); }} className="mt-1.5 w-full border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-white"><option>QPSK</option><option>BPSK</option><option>8PSK</option><option>16QAM</option><option>FSK</option><option>Unknown</option></select></label>
               <label className="block text-xs text-zinc-400">Notes<textarea value={feedbackNote} onChange={(event) => { setFeedbackNote(event.target.value); setFeedbackSaved(false); }} rows={3} placeholder="Add a short evidence note" className="mt-1.5 w-full resize-y border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-white placeholder:text-zinc-600" /></label>
               <button type="submit" className="flex w-full items-center justify-center gap-2 bg-zinc-100 px-3 py-2.5 text-xs font-semibold text-black hover:bg-white"><Check className="h-3.5 w-3.5" />Save review</button>
-              {feedbackSaved && <p role="status" className="text-xs text-emerald-300">Review saved for this session. No dataset was updated.</p>}
+              {feedbackSaved && <p role="status" className="text-xs text-emerald-300">Review saved in this browser. No dataset was updated.</p>}
             </form>
+            <div className="mt-5 border-t border-zinc-800 pt-4">
+              <div className="flex items-center justify-between gap-3"><p className={mutedLabel}>Local review queue · {reviews.length}</p><button type="button" disabled={!reviews.length} onClick={downloadReviews} className="flex items-center gap-1.5 border border-zinc-700 px-2.5 py-1.5 text-[10px] text-zinc-300 disabled:opacity-40"><Download className="h-3 w-3" />Export CSV</button></div>
+              {reviews.length ? <ul className="mt-2 max-h-40 divide-y divide-zinc-800 overflow-y-auto">{reviews.slice(0, 8).map((review) => <li key={review.id} className="py-2 text-[11px]"><div className="flex justify-between gap-2"><span className="text-zinc-200">{review.signalId} · {review.label}</span><time className="text-zinc-600">{new Date(review.createdAt).toLocaleDateString()}</time></div>{review.notes && <p className="mt-1 line-clamp-2 text-zinc-500">{review.notes}</p>}</li>)}</ul> : <p className="mt-2 text-[11px] text-zinc-600">No analyst reviews saved in this browser yet.</p>}
+            </div>
           </section>
         </div>
       )}
@@ -178,7 +233,7 @@ export function IntelligenceWorkspace({ metadata, spectralData }: IntelligenceWo
             <div><p className={mutedLabel}>Recording information</p><dl className="mt-3 space-y-2 text-xs">{[["Format", reportDetails.format], ["Sample rate", reportDetails.sampleRate], ["Center frequency", reportDetails.centerFrequency], ["Duration", reportDetails.duration]].map(([label, value]) => <div key={label} className="flex justify-between gap-3 border-b border-zinc-900 pb-2"><dt className="text-zinc-500">{label}</dt><dd className="text-zinc-200">{value}</dd></div>)}</dl></div>
             <div><p className={mutedLabel}>Signal characteristics</p><dl className="mt-3 space-y-2 text-xs">{[["Modulation", reportDetails.modulation], ["Bandwidth", reportDetails.bandwidth], ["SNR", reportDetails.snr], ["FEC / interleaving", "Unknown"]].map(([label, value]) => <div key={label} className="flex justify-between gap-3 border-b border-zinc-900 pb-2"><dt className="text-zinc-500">{label}</dt><dd className="text-zinc-200">{value}</dd></div>)}</dl></div>
           </div>
-          <div className="mt-5 border-t border-zinc-800 pt-4"><p className={mutedLabel}>Included sections</p><div className="mt-3 flex flex-wrap gap-2">{['Recording details', 'Signal events', 'Classification & uncertainty', 'Recovery status', 'Analyst notes', 'Method limitations'].map((item) => <span key={item} className="border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-[10px] text-zinc-400">{item}</span>)}</div><p className="mt-4 font-sans text-[11px] leading-relaxed text-zinc-500">The downloadable file marks sample signal rows as illustrative. The spectrum, waterfall and constellation remain available in the workbench; their canvas previews are not embedded as measured evidence in this PDF.</p></div>
+          <div className="mt-5 border-t border-zinc-800 pt-4"><p className={mutedLabel}>Included sections</p><div className="mt-3 flex flex-wrap gap-2">{['Recording details', 'Signal events', 'Classification & uncertainty', 'Demodulation & FEC status', 'Analyst notes', 'Visual diagnostics', 'Method limitations'].map((item) => <span key={item} className="border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-[10px] text-zinc-400">{item}</span>)}</div><p className="mt-4 font-sans text-[11px] leading-relaxed text-zinc-500">The PDF includes spectrum, waterfall, waveform and constellation illustrations. Preview plots and sample rows are clearly marked; measurements that are unavailable remain labeled as such.</p></div>
         </section>
       )}
     </section>

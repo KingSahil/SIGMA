@@ -120,11 +120,6 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   const [correlationData, setCorrelationData] = useState<CorrelationResult | null>(null);
   const [isCorrelating, setIsCorrelating] = useState(false);
 
-  // Auto-load default preset on first launch
-  useEffect(() => {
-    loadPreset('cubesat_qpsk_433');
-  }, []);
-
   const loadPreset = (presetId: string) => {
     const preset = PRESET_SIGNALS.find((p) => p.id === presetId) || PRESET_SIGNALS[0];
     const newMeta: SignalMetadata = {
@@ -158,6 +153,12 @@ export function SignalProvider({ children }: { children: ReactNode }) {
     setFecData(null);
     setCorrelationData(null);
   };
+
+  // Auto-load default preset on first launch
+  useEffect(() => {
+    const timer = window.setTimeout(() => loadPreset('cubesat_qpsk_433'), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const uploadCustomSignal = (file: File) => {
     const ext = file.name.endsWith('.wav') ? '.wav' : file.name.endsWith('.bin') ? '.bin' : '.iq';
@@ -321,4 +322,3 @@ export function useSignal() {
   }
   return context;
 }
-
