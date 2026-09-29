@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SIGMAFECSchema",
+  "description": "Schema for Forward Error Correction scheme identification and decoding",
+  "type": "object",
+  "properties": {
+    "fec_type": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["SUPPORTED", "NOT DETECTED", "UNKNOWN", "INSUFFICIENT DATA", "DECODING FAILED"]
+    },
+    "constraint_length_k": { "type": ["integer", "null"] },
+    "generators_octal": { "type": ["array", "null"], "items": { "type": "integer" } },
+    "reencode_residual": { "type": ["number", "null"] },
+    "corrected_errors": { "type": "integer", "minimum": 0 },
+    "decoded_bit_count": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["fec_type", "status", "corrected_errors"]
+}

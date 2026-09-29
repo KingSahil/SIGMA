@@ -228,6 +228,24 @@ class AudioManager:
             return None
 
 
+class BackgroundWorker(QtCore.QObject):
+    """Executes one analysis task away from the Qt event loop."""
+
+    finished = QtCore.pyqtSignal(object)
+    failed = QtCore.pyqtSignal(str)
+
+    def __init__(self, task):
+        super().__init__()
+        self.task = task
+
+    @QtCore.pyqtSlot()
+    def run(self):
+        try:
+            self.finished.emit(self.task())
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class SettingsDialog(QtWidgets.QDialog):
     """Clean, spacious settings dialog for RF configuration."""
 
@@ -391,14 +409,14 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         # 2. Section 1: Input Signal Card
         main_layout.addWidget(self._build_input_section())
 
-        # 3. Section 2: Visualizations (3 Big Cards in Splitter)
+        # 3. Analysis pipeline, then the synchronized visual workspace.
+        main_layout.addWidget(self._build_processing_flow())
+
+        # 4. Section 2: Visualizations (3 Big Cards in Splitter)
         main_layout.addWidget(self._build_visualizations_section(), 1)
 
-        # 4. Section 3: Results (Signal Analysis & Modulation)
+        # 5. Section 3: Results (Signal Intelligence)
         main_layout.addWidget(self._build_results_section())
-
-        # 5. Bottom: Big Clean Processing Flow
-        main_layout.addWidget(self._build_processing_flow())
 
         # Size the window now that the layout exists and can be measured.
         # Calling this from __init__ before _init_ui() built anything meant
@@ -433,7 +451,19 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         ctrl_box = QtWidgets.QHBoxLayout()
         ctrl_box.setSpacing(16)
 
-        self.btn_settings = QtWidgets.QPushButton("⚙ Settings")
+        status_box = QtWidgets.QVBoxLayout()
+        status_box.setSpacing(2)
+        self.engine_status_labels = {}
+        for key, text in (("engine", "● ANALYSIS ENGINE ONLINE"),
+                          ("dsp", "● DSP READY"),
+                          ("recovery", "● RECOVERY PENDING")):
+            status = QtWidgets.QLabel(text)
+            status.setProperty("class", "EngineStatus")
+            status_box.addWidget(status)
+            self.engine_status_labels[key] = status
+        ctrl_box.addLayout(status_box)
+
+        self.btn_settings = QtWidgets.QPushButton("Settings")
         self.btn_settings.clicked.connect(self._open_settings)
         ctrl_box.addWidget(self.btn_settings)
 
@@ -453,7 +483,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(10)
 
-        tag = QtWidgets.QLabel("INPUT")
+        tag = QtWidgets.QLabel("INPUT SIGNAL")
         tag.setProperty("class", "SectionTitle")
         layout.addWidget(tag)
 
@@ -499,7 +529,16 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.btn_load_iq = self.btn_load_signal
         self.btn_load_wav = self.btn_load_signal
 
-        self.btn_play_audio = QtWidgets.QPushButton("🔊 Play Audio")
+        self.btn_analyze = QtWidgets.QPushButton("Analyze")
+        self.btn_analyze.setProperty("class", "PrimaryBtn")
+        self.btn_analyze.clicked.connect(self._update_all_displays)
+        layout.addWidget(self.btn_analyze)
+
+        self.btn_reset = QtWidgets.QPushButton("Reset")
+        self.btn_reset.clicked.connect(self._reset_workspace)
+        layout.addWidget(self.btn_reset)
+
+        self.btn_play_audio = QtWidgets.QPushButton("Play Audio")
         self.btn_play_audio.setProperty("class", "AudioBtnIdle")
         self.btn_play_audio.clicked.connect(self._toggle_audio_playback)
         layout.addWidget(self.btn_play_audio)
@@ -567,7 +606,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_time.setProperty("class", "SectionTitle")
         h_time.addWidget(t_time)
 
-        self.hud_time = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_time = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_time.setProperty("class", "HudOverlayBadge")
         h_time.addWidget(self.hud_time)
 
@@ -592,7 +631,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_freq.setProperty("class", "SectionTitle")
         h_freq.addWidget(t_freq)
 
-        self.hud_freq = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_freq = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_freq.setProperty("class", "HudOverlayBadge")
         h_freq.addWidget(self.hud_freq)
 
@@ -625,7 +664,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_wf.setProperty("class", "SectionTitle")
         h_wf.addWidget(t_wf)
 
-        self.hud_wf = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_wf = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_wf.setProperty("class", "HudOverlayBadge")
         h_wf.addWidget(self.hud_wf)
 
@@ -650,7 +689,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         t_const.setProperty("class", "SectionTitle")
         h_const.addWidget(t_const)
 
-        self.hud_const = QtWidgets.QLabel("📍 Click/Drag to Inspect")
+        self.hud_const = QtWidgets.QLabel("Click/Drag to Inspect")
         self.hud_const.setProperty("class", "HudOverlayBadge")
         h_const.addWidget(self.hud_const)
 
@@ -797,7 +836,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         lay_an.setContentsMargins(12, 8, 12, 8)
         lay_an.setSpacing(6)
 
-        t_analysis = QtWidgets.QLabel("SIGNAL ANALYSIS & DSP METRICS")
+        t_analysis = QtWidgets.QLabel("SIGNAL INTELLIGENCE")
         t_analysis.setProperty("class", "SectionTitle")
         lay_an.addWidget(t_analysis)
 
@@ -895,7 +934,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         lay_dm.setContentsMargins(12, 8, 12, 8)
         lay_dm.setSpacing(5)
 
-        t_dm = QtWidgets.QLabel("DEMODULATION & BITSTREAM")
+        t_dm = QtWidgets.QLabel("SIGNAL RECOVERY")
         t_dm.setProperty("class", "SectionTitle")
         lay_dm.addWidget(t_dm)
 
@@ -983,56 +1022,34 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         return cell, val
 
     # =========================================================================
-    # 5. Bottom: Big Clean Processing Flow
+    # 5. Compact, state-driven analysis pipeline
     # =========================================================================
     def _build_processing_flow(self):
         bar = QtWidgets.QFrame()
         bar.setProperty("class", "BigPipelineBar")
         layout = QtWidgets.QHBoxLayout(bar)
-        layout.setContentsMargins(16, 4, 16, 4)
-        layout.setSpacing(12)
-
-        lbl_input = QtWidgets.QLabel("1. INPUT ✓")
-        lbl_input.setProperty("class", "BigPipelineStepDone")
-        layout.addWidget(lbl_input)
-
-        arr1 = QtWidgets.QLabel("→")
-        arr1.setProperty("class", "BigPipelineArrow")
-        layout.addWidget(arr1)
-
-        lbl_analysis = QtWidgets.QLabel("2. ANALYSIS ✓")
-        lbl_analysis.setProperty("class", "BigPipelineStepDone")
-        layout.addWidget(lbl_analysis)
-
-        arr2 = QtWidgets.QLabel("→")
-        arr2.setProperty("class", "BigPipelineArrow")
-        layout.addWidget(arr2)
-
-        lbl_mod = QtWidgets.QLabel("3. MODULATION ✓")
-        lbl_mod.setProperty("class", "BigPipelineStepDone")
-        layout.addWidget(lbl_mod)
-
-        arr3 = QtWidgets.QLabel("→")
-        arr3.setProperty("class", "BigPipelineArrow")
-        layout.addWidget(arr3)
-
-        self.lbl_demod = QtWidgets.QLabel("4. DEMOD ○")
-        self.lbl_demod.setProperty("class", "BigPipelineStepPending")
-        layout.addWidget(self.lbl_demod)
-
-        arr4 = QtWidgets.QLabel("→")
-        arr4.setProperty("class", "BigPipelineArrow")
-        layout.addWidget(arr4)
-
-        self.lbl_bits = QtWidgets.QLabel("5. BITS ○")
-        self.lbl_bits.setProperty("class", "BigPipelineStepPending")
-        layout.addWidget(self.lbl_bits)
-
-        layout.addStretch(1)
-
-        legend = QtWidgets.QLabel("✓ completed    ● processing    ○ not available")
-        legend.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 13px; font-weight: 600;")
-        layout.addWidget(legend)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(5)
+        self.pipeline_labels = {}
+        stages = [
+            ("input", "INPUT"), ("preprocess", "PREPROCESSING"),
+            ("extract", "PARAMETER EXTRACTION"), ("modulation", "MODULATION"),
+            ("demod", "DEMODULATION"), ("deinterleave", "DE-INTERLEAVING"),
+            ("fec", "FEC"), ("bits", "BITSTREAM"), ("correlation", "CORRELATION"),
+        ]
+        for index, (key, text) in enumerate(stages):
+            if index:
+                arrow = QtWidgets.QLabel("→")
+                arrow.setProperty("class", "BigPipelineArrow")
+                layout.addWidget(arrow)
+            label = QtWidgets.QLabel(text)
+            label.setAlignment(Qt.AlignCenter)
+            label.setProperty("class", "PipelineStage")
+            label.setToolTip("Not executed")
+            layout.addWidget(label, 1)
+            self.pipeline_labels[key] = label
+        self.lbl_demod = self.pipeline_labels["demod"]
+        self.lbl_bits = self.pipeline_labels["bits"]
 
         return bar
 
@@ -1063,12 +1080,36 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.btn_play_audio.style().unpolish(self.btn_play_audio)
         self.btn_play_audio.style().polish(self.btn_play_audio)
 
+    def _reset_workspace(self):
+        """Return the workspace view to the loaded signal and quad layout."""
+        self._set_view_mode("quad")
+        self._update_all_displays()
+        if not self.audio_manager.is_playing:
+            self.flowgraph.capture_preview(0.15)
+
     # =========================================================================
     # Displays Update & Event Handlers
     # =========================================================================
     def _update_all_displays(self):
         """Updates UI parameters with real calculated physical properties."""
         m = self.metadata
+
+        self._set_pipeline_state(
+            "input", "done" if getattr(m, "file_exists", False) else "unknown",
+            "Loaded" if getattr(m, "file_exists", False) else "File unavailable")
+        self._set_pipeline_state(
+            "preprocess", "done" if getattr(m, "num_samples", 0) else "unknown",
+            "Samples available" if getattr(m, "num_samples", 0) else "No samples")
+        metrics_ready = any(getattr(m, name, "--") != "--" for name in (
+            "rms_amplitude", "peak_amplitude", "signal_power_dbfs", "snr"))
+        self._set_pipeline_state("extract", "done" if metrics_ready else "unknown",
+                                 "Measured" if metrics_ready else "Not available")
+        modulation_ready = getattr(m, "modulation_class", "Not analyzed") != "Not analyzed"
+        self._set_pipeline_state(
+            "modulation", "done" if modulation_ready else "unknown",
+            getattr(m, "modulation_source", "Not analyzed"))
+        for key in ("deinterleave", "fec", "correlation"):
+            self._set_pipeline_state(key, "unknown", "Not executed")
 
         # Input Card
         self.lbl_filename.setText(m.filename)
@@ -1125,10 +1166,83 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         # Provenance, not confidence -- see the note where this label is built.
         self.lbl_mod_conf.setText(f"Source: {m.modulation_confidence}")
 
-        self._run_demod_stage()
+        self._start_demod_stage()
+
+    def _start_background_task(self, task, finished):
+        """Run a DSP task in a QThread and dispatch its result to Qt."""
+        if getattr(self, "_analysis_thread", None) is not None:
+            return False
+        thread = QtCore.QThread(self)
+        worker = BackgroundWorker(task)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(finished)
+        worker.failed.connect(lambda message: finished({"error": message}))
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._analysis_finished)
+        self._analysis_thread = thread
+        self._analysis_worker = worker
+        thread.start()
+        return True
+
+    def _analysis_finished(self):
+        self._analysis_thread = None
+        self._analysis_worker = None
+
+    def _start_demod_stage(self):
+        """Start demodulation without blocking startup or the Analyze button."""
+        self._demod_state = "ANALYZING"
+        self._demod_reason = None
+        self._reset_demod_panel("ANALYZING", reason=None)
+        self.btn_analyze.setEnabled(False)
+        self.btn_reset.setEnabled(False)
+        self._start_background_task(
+            lambda: self._run_demod_stage(render=False),
+            self._finish_demod_stage,
+        )
+
+    def _finish_demod_stage(self, result):
+        """Render the completed worker result on the Qt GUI thread."""
+        self.btn_analyze.setEnabled(True)
+        self.btn_reset.setEnabled(True)
+        if isinstance(result, dict) and result.get("error"):
+            self._reset_demod_panel("ERROR", result["error"])
+            return
+        if self.demod_result is None:
+            self._reset_demod_panel(
+                self._demod_state, self._demod_reason)
+            return
+        coding = self.coding_result
+        self._set_pipeline_step(self.lbl_demod, "DEMODULATION", done=True)
+        self._set_pipeline_step(self.lbl_bits, "BITSTREAM", done=True)
+        if coding is not None and coding.analysed:
+            self._set_pipeline_state(
+                "deinterleave", "done" if coding.interleaver else "unknown",
+                coding.interleaver or "Not detected")
+            self._set_pipeline_state(
+                "fec", "done" if coding.had_fec else "unknown",
+                coding.fec_scheme or "Not detected")
+            self._set_pipeline_state(
+                "correlation", "done" if coding.sync_hits else "unknown",
+                "Header match found" if coding.sync_hits else "No match")
+        self._render_demod_card(self.demod_result, coding)
+        bits_txt = format_bitstream_summary(self.demod_result, max_bits=48)
+        self.lbl_bitstream.setText(
+            " ".join(bits_txt[i:i + 4] for i in range(0, len(bits_txt), 4)))
+        self.btn_deep_search.setEnabled(True)
 
     def _reset_demod_panel(self, state_text, reason=None):
         """Put the DEMODULATION card into a non-running state with an optional reason."""
+        recovery_status = getattr(self, "engine_status_labels", {}).get("recovery")
+        if recovery_status is not None:
+            recovery_status.setText(f"● RECOVERY {state_text}")
+            recovery_status.setProperty(
+                "class", "EngineStatus" if state_text == "LOCKED" else "EngineStatusWarn")
+            recovery_status.style().unpolish(recovery_status)
+            recovery_status.style().polish(recovery_status)
         self.lbl_demod_state.setText(state_text)
         self.lbl_demod_state.setProperty("class", "DemodValueWarn")
         self.lbl_demod_method.setText("--")
@@ -1179,20 +1293,25 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         # The deep search is slow enough that a second click while it runs
         # would queue another 1.4 s of work behind this one.
         self.btn_deep_search.setEnabled(False)
+        self.btn_analyze.setEnabled(False)
         self._reset_demod_panel("DEEP SEARCH", reason=None)
-        QtWidgets.QApplication.processEvents()
-        try:
-            coding = self._run_coding_analysis(deep=True)
-            if coding is None:
-                self._reset_demod_panel("DEEP SEARCH",
-                                        "no bitstream to re-analyse")
-                return
-            # Re-render from the stored demod result, no re-demodulation.
-            if self.demod_result is not None:
-                self._render_demod_card(self.demod_result, coding)
-        finally:
-            self.btn_deep_search.setEnabled(
-                getattr(self, "_last_bits", None) is not None)
+        self._start_background_task(
+            lambda: self._run_coding_analysis(deep=True),
+            self._finish_deep_coding_search,
+        )
+
+    def _finish_deep_coding_search(self, result):
+        self.btn_analyze.setEnabled(True)
+        self.btn_deep_search.setEnabled(getattr(self, "_last_bits", None) is not None)
+        if isinstance(result, dict) and result.get("error"):
+            self._reset_demod_panel("ERROR", result["error"])
+            return
+        coding = self.coding_result
+        if coding is None:
+            self._reset_demod_panel("DEEP SEARCH", "no bitstream to re-analyse")
+            return
+        if self.demod_result is not None:
+            self._render_demod_card(self.demod_result, coding)
 
     def _render_demod_card(self, res, coding):
         """Render the DEMODULATION card from a demod result and its coding layer.
@@ -1245,7 +1364,7 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         )
         self.lbl_demod_reason.setVisible(False)
 
-    def _run_demod_stage(self):
+    def _run_demod_stage(self, render=True):
         """Run demodulation on the loaded capture and update the pipeline steps.
 
         Demodulation needs a symbol rate it can trust, so it only runs when
@@ -1259,17 +1378,23 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
         self.demod_result = None
         self.coding_result = None
         self._last_bits = None
-        self.btn_deep_search.setEnabled(False)
+        self._demod_state = "NOT RUN"
+        self._demod_reason = None
+        if render:
+            self.btn_deep_search.setEnabled(False)
 
         # Reset to pending, then promote only on real success.
-        self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=False)
-        self._set_pipeline_step(self.lbl_bits, "5. BITS", done=False)
-        self._reset_demod_panel("NOT RUN")
+        if render:
+            self._set_pipeline_step(self.lbl_demod, "DEMODULATION", done=False)
+            self._set_pipeline_step(self.lbl_bits, "BITSTREAM", done=False)
+            self._reset_demod_panel("NOT RUN")
 
         if not sr or not sr.get("locked"):
             reason = "No symbol rate lock, so there is no clock to sample at."
-            self.lbl_demod.setToolTip(reason)
-            self._reset_demod_panel("NO CLOCK", reason)
+            self._demod_state, self._demod_reason = "NO CLOCK", reason
+            if render:
+                self.lbl_demod.setToolTip(reason)
+                self._reset_demod_panel("NO CLOCK", reason)
             return
 
         # A LOW-confidence lock means the clock line is barely above the noise
@@ -1280,8 +1405,10 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             reason = (f"Symbol rate lock is only LOW ({sr['prominence_db']:.1f} dB "
                       f"over the noise floor), so the bitstream would be sampled "
                       f"on an untrusted clock. Declined.")
-            self.lbl_demod.setToolTip(reason)
-            self._reset_demod_panel("DECLINED", reason)
+            self._demod_state, self._demod_reason = "DECLINED", reason
+            if render:
+                self.lbl_demod.setToolTip(reason)
+                self._reset_demod_panel("DECLINED", reason)
             return
 
         # Which constellation to slice against.
@@ -1407,8 +1534,10 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
                         f"Detected {mod or 'unknown'}; no digital constellation "
                         f"explains the symbols (best EVM {best_txt}). Declined "
                         f"rather than guessing a constellation order.")
-                    self.lbl_demod.setToolTip(reason)
-                    self._reset_demod_panel("UNSUPPORTED", reason)
+                    self._demod_state, self._demod_reason = "UNSUPPORTED", reason
+                    if render:
+                        self.lbl_demod.setToolTip(reason)
+                        self._reset_demod_panel("UNSUPPORTED", reason)
                     return
                 source = (f"symbols: {label} is the simplest that fits "
                           f"(EVM {evms[label]:.1f}%)")
@@ -1433,12 +1562,16 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             self.demod_result = res
 
             if not res.locked:
-                self.lbl_demod.setToolTip(f"Demodulator declined: {res.reason}")
-                self._reset_demod_panel("DECLINED", res.reason)
+                self._demod_state, self._demod_reason = "DECLINED", res.reason
+                if render:
+                    self.lbl_demod.setToolTip(f"Demodulator declined: {res.reason}")
+                    self._reset_demod_panel("DECLINED", res.reason)
                 return
 
-            self._set_pipeline_step(self.lbl_demod, "4. DEMOD", done=True)
-            self._set_pipeline_step(self.lbl_bits, "5. BITS", done=True)
+            self._demod_state = "LOCKED"
+            if render:
+                self._set_pipeline_step(self.lbl_demod, "DEMODULATION", done=True)
+                self._set_pipeline_step(self.lbl_bits, "BITSTREAM", done=True)
 
             # PS section 3 (i)/(iii)/(iv): FEC scheme identification,
             # interleaver detection, decode. Runs over the recovered bits. It
@@ -1451,9 +1584,25 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
             # interleaved is not identified here; that needs the deep search,
             # offered separately so the normal load stays quick.
             self._last_bits = np.asarray(res.bits)
-            self.btn_deep_search.setEnabled(True)
+            if render:
+                self.btn_deep_search.setEnabled(True)
             coding = self._run_coding_analysis()
+            if render and coding is not None and coding.analysed:
+                self._set_pipeline_state(
+                    "deinterleave",
+                    "done" if coding.interleaver else "unknown",
+                    coding.interleaver or "Not detected")
+                self._set_pipeline_state(
+                    "fec",
+                    "done" if coding.had_fec else "unknown",
+                    coding.fec_scheme or ("Not detected" if not coding.had_fec else "Validated"))
+                self._set_pipeline_state(
+                    "correlation",
+                    "done" if coding.sync_hits else "unknown",
+                    "Header match found" if coding.sync_hits else "No match")
 
+            if not render:
+                return
             self.lbl_demod.setToolTip(
                 f"{res.modulation}, {res.n_symbols} symbols, "
                 f"EVM {res.evm_percent:.1f}%  --  chosen by {source}")
@@ -1474,8 +1623,10 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
                 w.style().polish(w)
         except Exception as e:
             print(f"[SIGMA] Demodulation error: {e}")
-            self.lbl_demod.setToolTip(f"Demodulation error: {e}")
-            self._reset_demod_panel("ERROR", str(e))
+            self._demod_state, self._demod_reason = "ERROR", str(e)
+            if render:
+                self.lbl_demod.setToolTip(f"Demodulation error: {e}")
+                self._reset_demod_panel("ERROR", str(e))
 
     def _read_samples_for_demod(self, max_samples=400_000):
         """Read complex baseband samples from the loaded file for demodulation."""
@@ -1494,11 +1645,29 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
     def _set_pipeline_step(self, label_widget, text, done):
         """Flip a pipeline step between completed and not-available styling."""
-        label_widget.setText(f"{text} ✓" if done else f"{text} ○")
+        label_widget.setText(f"{text}  /  {'COMPLETED' if done else 'READY'}")
         label_widget.setProperty(
-            "class", "BigPipelineStepDone" if done else "BigPipelineStepPending")
+            "class", "PipelineStageDone" if done else "PipelineStage")
         label_widget.style().unpolish(label_widget)
         label_widget.style().polish(label_widget)
+
+    def _set_pipeline_state(self, key, state, detail):
+        """Render one pipeline stage without implying work that did not run."""
+        label = getattr(self, "pipeline_labels", {}).get(key)
+        if label is None:
+            return
+        state_text = {
+            "done": "COMPLETED", "active": "ACTIVE", "unknown": "UNKNOWN",
+            "failed": "FAILED",
+        }.get(state, "READY")
+        label.setText(f"{label.text().split('  /  ')[0]}  /  {state_text}")
+        label.setToolTip(detail or state_text)
+        label.setProperty("class", {
+            "done": "PipelineStageDone", "active": "PipelineStageActive",
+            "unknown": "PipelineStageUnknown", "failed": "PipelineStageUnknown",
+        }.get(state, "PipelineStage"))
+        label.style().unpolish(label)
+        label.style().polish(label)
 
     def _open_settings(self):
         dialog = SettingsDialog(self, self.samp_rate, self.center_freq)
@@ -1612,6 +1781,10 @@ class SigmaMainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         try:
+            analysis_thread = getattr(self, "_analysis_thread", None)
+            if analysis_thread is not None and analysis_thread.isRunning():
+                analysis_thread.quit()
+                analysis_thread.wait(5000)
             self.audio_manager.stop()
             self.flowgraph.stop_waves()
             self.flowgraph.stop()

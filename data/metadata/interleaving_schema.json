@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SIGMAInterleavingSchema",
+  "description": "Schema for interleaver detection and de-interleaving configuration",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["block", "convolutional", "diagonal", "pseudo_random", "none", "unknown"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["SUCCESS", "UNKNOWN", "INSUFFICIENT DATA", "NOT DETECTED", "SKIPPED"]
+    },
+    "parameters": { "type": "object" },
+    "confidence": { "type": ["number", "null"] },
+    "input_bit_count": { "type": "integer" },
+    "output_bit_count": { "type": "integer" }
+  },
+  "required": ["mode", "status", "parameters"]
+}

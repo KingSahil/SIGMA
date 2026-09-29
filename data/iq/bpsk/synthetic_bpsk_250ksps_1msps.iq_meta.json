@@ -1,0 +1,9 @@
+{
+  "source_type": "SYNTHETIC TEST DATA",
+  "modulation": "BPSK",
+  "symbol_rate": 250000.0,
+  "sample_rate": 1000000.0,
+  "sps": 4,
+  "snr_db": 25.0,
+  "description": "Synthetic BPSK test recording with known ground truth"
+}

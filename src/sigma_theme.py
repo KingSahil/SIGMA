@@ -6,30 +6,30 @@ Spacious, highly readable, large touch targets, bold typography.
 
 COLORS = {
     # Surfaces
-    "bg_main": "#0d1117",          # Deep slate workspace
-    "bg_card": "#161b24",          # Large container card
-    "bg_card_inner": "#1d2430",    # Nested stat / metric cell
-    "bg_plot": "#10141d",          # Dark plot canvas
-    "bg_accent_soft": "rgba(56, 189, 248, 0.12)",
+    "bg_main": "#0B1220",
+    "bg_card": "#111B2E",
+    "bg_card_inner": "#162235",
+    "bg_plot": "#0B1220",
+    "bg_accent_soft": "rgba(34, 199, 232, 0.12)",
     
     # Borders
-    "border": "#273142",           # Soft modern border
-    "border_light": "#364359",     # Hover border
+    "border": "#263750",
+    "border_light": "#38506f",
     
     # Text
-    "text_primary": "#f8fafc",     # Crisp bold white
-    "text_secondary": "#94a3b8",   # Soft slate gray
-    "text_muted": "#64748b",       # Subdued
+    "text_primary": "#F1F5F9",
+    "text_secondary": "#94A3B8",
+    "text_muted": "#64748B",
     
     # Material / Google Stitch Accents
-    "accent_primary": "#38bdf8",   # Google Sky Blue
-    "accent_blue": "#60a5fa",      # Electric blue
-    "accent_success": "#34d399",   # Fresh emerald green
+    "accent_primary": "#22C7E8",
+    "accent_blue": "#22C7E8",
+    "accent_success": "#22C55E",
     "accent_audio": "#f43f5e",     # Vibrant coral for audio playback
     "accent_audio_active": "#10b981", # Emerald when audio is playing
-    "accent_warn": "#fbbf24",      # Amber
-    "accent_i": "#38bdf8",         # In-Phase I (Cyan)
-    "accent_q": "#f472b6",         # Quadrature Q (Rose/Magenta)
+    "accent_warn": "#F59E0B",
+    "accent_i": "#22C7E8",
+    "accent_q": "#FF7A18",
 }
 
 BIG_MATERIAL_QSS = f"""
@@ -89,6 +89,53 @@ QLabel.AppSubtitle {{
     font-size: 12px;
     color: {COLORS['text_secondary']};
     letter-spacing: 0.4px;
+}}
+
+QLabel.EngineStatus {{
+    color: {COLORS['accent_success']};
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}}
+
+QLabel.EngineStatusWarn {{
+    color: {COLORS['accent_warn']};
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}}
+
+QLabel.PipelineStage {{
+    background-color: {COLORS['bg_card_inner']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 6px;
+    color: {COLORS['text_secondary']};
+    font-size: 10px;
+    font-weight: 800;
+    padding: 7px 8px;
+}}
+
+QLabel.PipelineStageDone {{
+    background-color: rgba(34, 199, 232, 0.12);
+    border: 1px solid {COLORS['accent_primary']};
+    color: {COLORS['accent_primary']};
+}}
+
+QLabel.PipelineStageActive {{
+    background-color: rgba(255, 122, 24, 0.14);
+    border: 1px solid #FF7A18;
+    color: #FF7A18;
+}}
+
+QLabel.PipelineStageValidated {{
+    background-color: rgba(34, 197, 94, 0.12);
+    border: 1px solid {COLORS['accent_success']};
+    color: {COLORS['accent_success']};
+}}
+
+QLabel.PipelineStageUnknown {{
+    color: {COLORS['accent_warn']};
+    border-color: {COLORS['accent_warn']};
 }}
 
 

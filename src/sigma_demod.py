@@ -397,6 +397,9 @@ def demodulate(x, samp_rate, modulation="BPSK", sps=None, alpha=0.35):
         return res
 
     mod = modulation.upper().replace("-", "")
+    if "FSK" in mod:
+        return demodulate_fsk(x, samp_rate, sps=sps)
+
     const = constellation_for(mod)
     if const is None:
         res.reason = f"unsupported modulation '{modulation}'"
@@ -407,7 +410,7 @@ def demodulate(x, samp_rate, modulation="BPSK", sps=None, alpha=0.35):
     # --- 1. Carrier recovery ---------------------------------------------
     # The exponent must match the constellation's rotational symmetry order,
     # otherwise the modulation is not stripped and the estimate is wrong.
-    n_sym_rots = SYMMETRY_ORDER[mod]
+    n_sym_rots = SYMMETRY_ORDER.get(mod, 4)
 
     # Always refine. An earlier revision gated the sub-bin refinement on the
     # constellation being constant modulus, because the refinement was then
@@ -512,6 +515,74 @@ def demodulate(x, samp_rate, modulation="BPSK", sps=None, alpha=0.35):
 
     res.locked = True
     res.reason = "symbols recovered"
+    return res
+
+
+def demodulate_fsk(x, samp_rate, sps=None, symbol_rate=None):
+    """Demodulate 2-FSK / BFSK using instantaneous frequency discrimination."""
+    res = DemodResult()
+    x = np.asarray(x, dtype=np.complex128)
+    if x.size < 64:
+        res.reason = "insufficient samples for FSK"
+        return res
+
+    if sps is None:
+        if symbol_rate and symbol_rate > 0:
+            sps = samp_rate / symbol_rate
+        else:
+            sps = 4.0
+    if sps < 2.0:
+        res.reason = f"samples per symbol {sps:.2f} is below 2.0"
+        return res
+
+    sps_int = max(2, int(round(sps)))
+    res.modulation = "2-FSK"
+    res.sps = float(sps)
+
+    # 1. Instantaneous frequency discrimination via derivative of unwrapped phase
+    prod = x[1:] * np.conj(x[:-1])
+    inst_freq = np.angle(prod) * (samp_rate / (2.0 * np.pi))
+
+    # 2. Symbol matched filter (moving average)
+    kernel = np.ones(sps_int, dtype=np.float64) / sps_int
+    filtered = np.convolve(inst_freq, kernel, mode="valid")
+
+    # 3. Best sampling phase decimation
+    best_phase = 0
+    max_kurt = -1.0
+    for p in range(sps_int):
+        sub = filtered[p::sps_int]
+        if len(sub) > 16:
+            m2 = np.mean((sub - np.mean(sub)) ** 2)
+            m4 = np.mean((sub - np.mean(sub)) ** 4)
+            kurt = m4 / (m2 ** 2 + 1e-12) if m2 > 1e-12 else 0.0
+            if kurt > max_kurt:
+                max_kurt = kurt
+                best_phase = p
+
+    symbols = filtered[best_phase::sps_int]
+    if len(symbols) < 8:
+        res.reason = "too few symbols after decimation"
+        return res
+
+    # 4. Slicing
+    center_freq = float(np.median(symbols))
+    res.carrier_offset_hz = center_freq
+    bits = (symbols > center_freq).astype(np.uint8)
+
+    # 5. EVM / SNR quality
+    f0 = np.mean(symbols[bits == 0]) if np.any(bits == 0) else center_freq - 1.0
+    f1 = np.mean(symbols[bits == 1]) if np.any(bits == 1) else center_freq + 1.0
+    sep = abs(float(f1 - f0))
+    target = np.where(bits == 1, f1, f0)
+    err = np.sqrt(np.mean((symbols - target) ** 2))
+    res.evm_percent = float(err / (sep + 1e-6) * 100.0)
+
+    res.symbols = symbols
+    res.bits = bits
+    res.n_symbols = len(symbols)
+    res.locked = True
+    res.reason = "FSK symbols recovered"
     return res
 
 
