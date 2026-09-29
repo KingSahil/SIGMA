@@ -99,6 +99,7 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
     snr: apiResult?.signal_metrics?.snr_str ?? (isLiveCapture ? (apiPlots?.snr_db !== undefined ? `${apiPlots.snr_db.toFixed(1)} dB (FFT estimate)` : 'Not measured') : spectralData ? `${spectralData.snrDb.toFixed(1)} dB` : 'Not available'),
     signals: shownSignals,
     plotData: apiPlots,
+    spectralData,
     classificationEvidence: apiResult?.classification?.confidence_evidence,
     demodulationStatus: apiResult?.recovery?.demodulation_status,
     deinterleavingStatus: apiResult?.deinterleaving?.status,

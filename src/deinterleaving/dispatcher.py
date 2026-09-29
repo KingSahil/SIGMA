@@ -149,13 +149,28 @@ def deinterleave(
 
     # Case 2: Mode is unknown -> blind candidate search
     if sigma_detect_interleaver is not None and reencode_residual is not None:
-        best_mode, best_params, margin, best_res, table = sigma_detect_interleaver(
-            arr, K=DEFAULT_K, polys=DEFAULT_POLYS
+        # ``detect_interleaver`` returns a winning mode, residual scores, and
+        # the geometry that produced each score.  Older versions returned a
+        # five-value FEC-scoring tuple, so adapt the current detector contract
+        # here rather than allowing a custom capture to abort recovery.
+        best_mode, scores, geometry = sigma_detect_interleaver(
+            arr, K=DEFAULT_K, polys=DEFAULT_POLYS, return_geometry=True
         )
         if best_mode is not None:
+            best_res = scores.get(best_mode)
+            ordered_scores = sorted(scores.values())
+            margin = (
+                ordered_scores[1] - ordered_scores[0]
+                if len(ordered_scores) > 1 else None
+            )
+            best_params = {}
+            if best_mode in {"block", "diagonal"}:
+                rows, cols = geometry.get(best_mode, (None, None))
+                if rows is not None and cols is not None:
+                    best_params = {"rows": rows, "cols": cols}
             # We found an interleaving mode that unlocks FEC decoding (residual drops)
             detected_out = deinterleave(arr, mode=best_mode, parameters=best_params)["output_bits"]
-            conf = float(np.clip(1.0 - best_res * 10.0, 0.0, 1.0))
+            conf = float(np.clip(1.0 - (best_res if best_res is not None else 1.0) * 10.0, 0.0, 1.0))
             return {
                 "mode": best_mode,
                 "input_bits": n,
@@ -167,7 +182,7 @@ def deinterleave(
                     "method": "blind_fec_residual_scoring",
                     "residual": best_res,
                     "margin": margin,
-                    "candidates_tested": len(table),
+                    "candidates_tested": len(scores),
                 }
             }
 

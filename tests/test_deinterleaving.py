@@ -65,6 +65,11 @@ class TestDeinterleaving(unittest.TestCase):
         out = deinterleave(short_bits, mode="block")
         self.assertEqual(out["status"], "insufficient_data")
 
+    def test_dispatcher_unknown_mode_does_not_crash(self):
+        out = deinterleave(self.bits, mode="unknown")
+        self.assertIn(out["status"], {"success", "unknown"})
+        self.assertEqual(len(out["output_bits"]), len(self.bits))
+
 
 if __name__ == "__main__":
     unittest.main()

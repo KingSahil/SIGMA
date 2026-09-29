@@ -36,6 +36,10 @@ def chance_threshold(n_bits: int, pattern_len: int, max_false_alarm: float = 0.0
     # Target p_single such that 1 - (1 - p_single)^num_tests <= max_false_alarm
     p_single = max_false_alarm / float(num_tests)
     # Binomial(pattern_len, 0.5)
+    # A short sync word in a long stream may not meet the false-alarm budget
+    # even with zero bit errors.  -1 deliberately means "do not accept a
+    # match" and prevents an uninitialised fallback from crashing recovery.
+    best_k = -1
     for k in range(pattern_len // 2):
         if binom.cdf(k, pattern_len, 0.5) <= p_single:
             best_k = k

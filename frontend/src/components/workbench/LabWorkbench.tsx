@@ -736,6 +736,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
                   signals: [],
                   isPreview: !uploadedFile,
                   plotData: apiPlots,
+                  spectralData,
                   classificationEvidence: apiResult?.classification?.confidence_evidence,
                   demodulationStatus: apiResult?.recovery?.demodulation_status,
                   deinterleavingStatus: apiResult?.deinterleaving?.status,
