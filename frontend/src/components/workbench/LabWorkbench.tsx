@@ -110,7 +110,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   return (
     <div className="min-h-screen bg-[#09090b] text-[#EDEDED] flex flex-col font-mono text-xs selection:bg-zinc-800 selection:text-white">
       {/* Top Engineering Telemetry Bar */}
-      <header className="h-14 border-b border-zinc-800 bg-[#0c0c0e] px-6 flex items-center justify-between sticky top-0 z-40">
+      <header className="sticky top-0 z-40 flex min-h-14 flex-wrap items-center justify-between gap-2 border-b border-zinc-800 bg-[#0c0c0e] px-3 py-2 sm:px-6">
         <div className="flex items-center gap-4">
           <button
             onClick={onBackToOverview}
@@ -135,11 +135,11 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
         </div>
 
         {/* Center/Right Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           {/* Target Capture Indicator */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 border border-zinc-800 bg-zinc-950 text-[11px] text-zinc-400">
+          <div className="hidden xl:flex min-w-0 max-w-64 items-center gap-2 px-3 py-1 border border-zinc-800 bg-zinc-950 text-[11px] text-zinc-400">
             <span className="text-zinc-500">CAPTURE:</span>
-            <span className="text-zinc-200 font-semibold">{metadata?.name}</span>
+            <span className="truncate text-zinc-200 font-semibold">{metadata?.name}</span>
             <span className="text-cyan-400">
               ({metadata?.centerFreqHz ? (metadata.centerFreqHz / 1e6).toFixed(2) : '433.92'} MHz)
             </span>
@@ -169,13 +169,18 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
         </div>
       </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/80 px-6 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/80 px-3 py-2.5 sm:px-6">
         <div className="flex items-center gap-2 text-[11px] text-amber-300">
+<<<<<<< HEAD
           <span className={`h-1.5 w-1.5 rounded-full ${apiStatus === 'connected' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
           {apiStatus === 'connected' ? 'FastAPI analysis services connected' : apiStatus === 'checking' ? 'Checking FastAPI analysis services...' : 'FastAPI unavailable - start run_api.py on port 8000'}
+=======
+          <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          {apiOnline ? 'Analysis API connected · upload a capture to run it' : 'Sample preview · connect the SIGMA API to analyze uploaded captures'}
+>>>>>>> 0cc662e11b9eeed9419e70aa027b0ee3c0b2bc3b
         </div>
         {pipelineError && <div className="border border-red-900/60 bg-red-950/30 px-3 py-1.5 text-[11px] text-red-300">{pipelineError}</div>}
-        <nav className="flex gap-1" aria-label="Workbench areas">
+        <nav className="flex flex-wrap gap-1" aria-label="Workbench areas">
           <button type="button" onClick={() => setWorkspace('analysis')} aria-current={workspace === 'analysis' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'analysis' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal analysis</button>
           <button type="button" onClick={() => setWorkspace('intelligence')} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>
           <button type="button" onClick={() => setWorkspace('error-control')} aria-current={workspace === 'error-control' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'error-control' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Error control lab</button>
@@ -184,7 +189,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       </div>
 
       {/* Pipeline Navigation Bar */}
-      {workspace === 'analysis' && <nav className="border-b border-zinc-800 bg-[#09090b] px-6 flex items-center gap-0 overflow-x-auto">
+      {workspace === 'analysis' && <nav className="flex items-center gap-0 overflow-x-auto border-b border-zinc-800 bg-[#09090b] px-2 sm:px-6">
         {pipelineStages.map((st) => {
           const Icon = st.icon;
           const isActive = activeStage === st.id;
@@ -206,7 +211,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       </nav>}
 
       {/* Main Lab Screen Area */}
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
+      <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 space-y-6 p-3 sm:p-6">
         {workspace === 'intelligence' ? (
           <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} />
         ) : workspace === 'error-control' ? (
@@ -534,7 +539,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
+            <div className="flex flex-col gap-3 border-t border-zinc-800 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-zinc-500">
                 BIT PERMUTATIONS REORDERED:{' '}
                 <strong className="text-emerald-400">{deinterleaveData?.bitChangesCount || 248}</strong>
@@ -615,7 +620,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
+            <div className="flex flex-col gap-3 border-t border-zinc-800 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-zinc-500">
                 DECODER: <strong className="text-white">{fecData?.decoder || 'Soft Viterbi (K=7, R=1/2)'}</strong>
               </span>
@@ -693,7 +698,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-end pt-4 border-t border-zinc-800">
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-zinc-800 pt-4">
               <button
                 onClick={() => downloadDossierPdf({
                   fileName: metadata?.name ?? 'signal-analysis.iq',

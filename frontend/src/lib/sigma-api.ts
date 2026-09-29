@@ -1,4 +1,5 @@
 export interface SigmaRecoveryResult {
+  analysis_id?: string;
   input_metadata?: {
     filename?: string;
     file_type?: string;
@@ -46,6 +47,36 @@ export interface SigmaAdvancedResult {
 }
 
 const apiBase = (process.env.NEXT_PUBLIC_SIGMA_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+
+export interface SigmaRAGEvidence {
+  id: string;
+  source: string;
+  title: string;
+  kind: string;
+  score: number;
+  content: string;
+}
+
+export interface SigmaRAGAnswer {
+  answer: string;
+  evidence: SigmaRAGEvidence[];
+  uncertainties: string[];
+  recommended_analysis: string[];
+  retrieval: { strategy: string; candidate_count?: number; generation_model?: string; embedding_model?: string };
+}
+
+export async function askSigmaRAG(query: string, signalObject?: SigmaRecoveryResult | null) {
+  const response = await fetch(`${apiBase}/rag/ask`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, signal_object: signalObject ?? null, limit: 6 }),
+  });
+  return readResponse<SigmaRAGAnswer>(response);
+}
+
+export async function getSigmaRAGHealth(signal?: AbortSignal) {
+  const response = await fetch(`${apiBase}/rag/health`, { signal, cache: 'no-store' });
+  return readResponse<{ configured: boolean; documents: number; embedded_documents: number; knowledge_by_type: Record<string, number>; generation_model: string; embedding_model: string }>(response);
+}
 
 async function readResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => ({}));
