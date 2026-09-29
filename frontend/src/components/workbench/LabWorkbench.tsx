@@ -71,6 +71,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [copied, setCopied] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [intelligenceView, setIntelligenceView] = useState<'signals' | 'model' | 'analyst' | 'reports'>('signals');
   const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'fingerprinting' | 'error-control' | 'comparison'>('analysis');
   const apiOnline = apiStatus === 'connected';
 
@@ -140,6 +141,14 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
 
         {/* Center/Right Controls */}
         <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={() => { setIntelligenceView('model'); setWorkspace('intelligence'); }}
+            className="flex items-center gap-1.5 border border-cyan-900/70 bg-cyan-950/20 px-3 py-1.5 text-[10px] text-cyan-300 transition-colors hover:border-cyan-500/70 hover:text-cyan-100"
+          >
+            <Cpu className="h-3.5 w-3.5" />
+            <span>MODEL LAB</span>
+          </button>
           {/* Target Capture Indicator */}
           <div className="hidden xl:flex min-w-0 max-w-64 items-center gap-2 px-3 py-1 border border-zinc-800 bg-zinc-950 text-[11px] text-zinc-400">
             <span className="text-zinc-500">CAPTURE:</span>
@@ -185,7 +194,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
         {pipelineError && <div className="border border-red-900/60 bg-red-950/30 px-3 py-1.5 text-[11px] text-red-300">{pipelineError}</div>}
         <nav className="flex flex-wrap gap-1" aria-label="Workbench areas">
           <button type="button" onClick={() => setWorkspace('analysis')} aria-current={workspace === 'analysis' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'analysis' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal analysis</button>
-          <button type="button" onClick={() => setWorkspace('intelligence')} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>
+          <button type="button" onClick={() => { setIntelligenceView('signals'); setWorkspace('intelligence'); }} aria-current={workspace === 'intelligence' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'intelligence' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal intelligence</button>
           <button type="button" onClick={() => setWorkspace('fingerprinting')} aria-current={workspace === 'fingerprinting' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'fingerprinting' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Signal fingerprinting</button>
           <button type="button" onClick={() => setWorkspace('error-control')} aria-current={workspace === 'error-control' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'error-control' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Error control lab</button>
           <button type="button" onClick={() => setWorkspace('comparison')} aria-current={workspace === 'comparison' ? 'page' : undefined} className={`px-3 py-1.5 text-xs ${workspace === 'comparison' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>Compare PDF</button>
@@ -217,7 +226,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       {/* Main Lab Screen Area */}
       <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 space-y-6 p-3 sm:p-6">
         {workspace === 'intelligence' ? (
-          <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} />
+          <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} requestedView={intelligenceView} />
         ) : workspace === 'fingerprinting' ? (
           <BlockchainFingerprintWorkspace capture={uploadedFile} metadata={metadata} spectralData={spectralData} apiResult={apiResult} />
         ) : workspace === 'error-control' ? (

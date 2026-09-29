@@ -35,10 +35,14 @@ interface IntelligenceWorkspaceProps {
   spectralData: SpectralAnalysisResult | null;
   apiResult?: SigmaRecoveryResult | null;
   apiPlots?: SigmaPlotData | null;
+  requestedView?: WorkspaceView;
 }
 
-export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null, apiPlots = null }: IntelligenceWorkspaceProps) {
+export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null, apiPlots = null, requestedView }: IntelligenceWorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>('signals');
+  useEffect(() => {
+    if (requestedView) setView(requestedView);
+  }, [requestedView]);
   const [selectedSignal, setSelectedSignal] = useState(sampleSignals[0].id);
   const [feedbackLabel, setFeedbackLabel] = useState('QPSK');
   const [feedbackNote, setFeedbackNote] = useState('');
@@ -146,7 +150,6 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
         <div className="flex flex-wrap gap-1 border border-zinc-800 bg-zinc-950 p-1" role="tablist" aria-label="Investigation views">
           {([
             ['signals', 'Signals'],
-            ['model', 'Model lab'],
             ['analyst', 'AI analyst'],
             ['reports', 'Reports'],
           ] as const).map(([id, label]) => (
