@@ -1,0 +1,75 @@
+<svg viewBox="0 0 680 562" width="100%" role="img" font-family="system-ui, -apple-system, sans-serif" xmlns="http://www.w3.org/2000/svg">
+<title>SIGMA full system architecture</title>
+<desc>Five-layer architecture: three clients feed a FastAPI gateway, which routes to three services, over a signal processing core, with Gemini for RAG and a shared data layer.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect x="40" y="40" width="186" height="56" rx="8" fill="#0C447C" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="133" y="60" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#B5D4F4">Desktop workstation</text>
+<text x="133" y="78" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#85B7EB">PyQt5 + GNU Radio</text>
+
+<rect x="247" y="40" width="186" height="56" rx="8" fill="#0C447C" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="340" y="60" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#B5D4F4">SignalForge web</text>
+<text x="340" y="78" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#85B7EB">Next.js 16 + Canvas</text>
+
+<rect x="454" y="40" width="186" height="56" rx="8" fill="#0C447C" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="547" y="60" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#B5D4F4">REST / WS clients</text>
+<text x="547" y="78" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#85B7EB">scripts, tests, curl</text>
+
+<path d="M133 96 L133 136" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M340 96 L340 136" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M547 96 L547 136" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="40" y="136" width="600" height="64" rx="8" fill="#0C447C" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="340" y="158" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#B5D4F4">FastAPI gateway</text>
+<text x="340" y="180" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#85B7EB">uvicorn :8000 · REST + WebSocket · CORS</text>
+
+<path d="M133 200 L133 240" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M340 200 L340 240" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M547 200 L547 240" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="40" y="240" width="186" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="133" y="260" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#9FE1CB">Measurement engine</text>
+<text x="133" y="278" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#5DCAA5">FFT · PSD · SNR · OBW</text>
+
+<rect x="247" y="240" width="186" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="340" y="260" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#9FE1CB">Deep pipeline</text>
+<text x="340" y="278" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#5DCAA5">L1 to L3 orchestrator</text>
+
+<rect x="454" y="240" width="186" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="547" y="260" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#9FE1CB">RAG service</text>
+<text x="547" y="278" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#5DCAA5">retrieval + answers</text>
+
+<path d="M133 296 L133 336" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M340 296 L340 336" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M565 296 L565 368" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="40" y="336" width="430" height="110" rx="18" fill="#04342C" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="60" y="354" dominant-baseline="central" font-size="13" font-weight="500" fill="#9FE1CB">Signal processing core (src/)</text>
+
+<rect x="60" y="368" width="116" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="118" y="388" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#9FE1CB">L1 ingest</text>
+<text x="118" y="406" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#5DCAA5">IQ · WAV</text>
+
+<rect x="197" y="368" width="116" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="255" y="388" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#9FE1CB">L2 analyze</text>
+<text x="255" y="406" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#5DCAA5">symbol rate</text>
+
+<rect x="334" y="368" width="116" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="392" y="388" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#9FE1CB">L3 demod</text>
+<text x="392" y="406" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#5DCAA5">sync · FEC</text>
+
+<rect x="490" y="368" width="150" height="56" rx="8" fill="#0C447C" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="565" y="388" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#B5D4F4">Google Gemini</text>
+<text x="565" y="406" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#85B7EB">embeddings + chat</text>
+
+<path d="M255 446 L255 486" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M565 424 L565 486" fill="none" stroke="#85B7EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="40" y="486" width="600" height="56" rx="8" fill="#0C447C" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="340" y="506" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#B5D4F4">Data layer</text>
+<text x="340" y="524" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="400" fill="#85B7EB">sigma.db · sigma_rag.sqlite3 · data/iq · uploads · docs</text>
+</svg>

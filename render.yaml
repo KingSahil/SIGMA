@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: sigma-api
+    runtime: python
+    region: singapore
+    plan: free
+    branch: master
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SIGMA_MAX_UPLOAD_BYTES
+        value: "536870912"
+      - key: SIGMA_MAX_ANALYSIS_SAMPLES
+        value: "1000000"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: GEMINI_EMBEDDING_MODEL
+        value: gemini-embedding-001

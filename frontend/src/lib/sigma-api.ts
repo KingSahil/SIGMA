@@ -102,6 +102,66 @@ export async function recoverSignal(file: File, settings: { sampleRate: number; 
   return readResponse<SigmaRecoveryResult>(response);
 }
 
+export interface UploadedSignal {
+  signal_id: string;
+  filename: string;
+  file_type: string;
+  status: string;
+  requires_metadata: boolean;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Registers a capture with the backend so it can be queued for analysis.
+ * Raw IQ is not self-describing, so sample_rate and iq_format are required and
+ * are validated server-side.
+ */
+export async function uploadSignal(
+  file: File,
+  settings: { sampleRate?: number; iqFormat?: string } = {},
+) {
+  const form = new FormData();
+  form.set('file', file, file.name);
+  if (settings.sampleRate) form.set('sample_rate', String(settings.sampleRate));
+  if (settings.iqFormat) form.set('iq_format', settings.iqFormat);
+  const response = await fetch(`${apiBase}/api/signals/upload`, { method: 'POST', body: form });
+  const body = await readResponse<{ success: boolean; data: UploadedSignal }>(response);
+  return body.data;
+}
+
+export interface AnalysisProbe {
+  job?: { status?: string; progress?: number; stage?: string; message?: string; error?: string };
+  result?: Record<string, unknown> | null;
+}
+
+/**
+ * Slim status/result probe. Large plot series are stripped by the API, which
+ * keeps this poll cheap even against megabyte-sized results.
+ */
+export async function getAnalysis(analysisId: string, signal?: AbortSignal) {
+  const response = await fetch(`${apiBase}/api/analysis/${analysisId}`, { signal, cache: 'no-store' });
+  const body = await readResponse<{ success: boolean; data: AnalysisProbe }>(response);
+  return body.data;
+}
+
+export async function fetchSpectrum(signalId: string, signal?: AbortSignal) {
+  const response = await fetch(`${apiBase}/api/signals/${signalId}/spectrum`, { signal, cache: 'no-store' });
+  const body = await readResponse<{ success: boolean; data: { frequencies: number[]; power: number[]; unit: string } }>(response);
+  return body.data;
+}
+
+export async function fetchConstellation(signalId: string, signal?: AbortSignal) {
+  const response = await fetch(`${apiBase}/api/signals/${signalId}/constellation`, { signal, cache: 'no-store' });
+  const body = await readResponse<{ success: boolean; data: { i: number[]; q: number[]; samples: number } }>(response);
+  return body.data;
+}
+
+export async function fetchSpectrogram(signalId: string, signal?: AbortSignal) {
+  const response = await fetch(`${apiBase}/api/signals/${signalId}/spectrogram`, { signal, cache: 'no-store' });
+  const body = await readResponse<{ success: boolean; data: { time: number[]; frequencies: number[]; power: number[][]; unit: string } }>(response);
+  return body.data;
+}
+
 export async function analyzeRawIq(file: File, settings: { sampleRate: number; modulation?: string }) {
   const form = new FormData();
   form.set('file', file, file.name);

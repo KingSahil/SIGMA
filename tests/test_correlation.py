@@ -12,7 +12,7 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 from correlation.alignment import align_bitstreams
-from correlation.header_detection import detect_candidate_headers, KNOWN_SYNC_WORDS
+from correlation.header_detection import chance_threshold, detect_candidate_headers, KNOWN_SYNC_WORDS
 from correlation.payload_detection import extract_candidate_payloads
 from correlation.scoring import correlate_bitstreams
 
@@ -49,6 +49,9 @@ class TestCorrelation(unittest.TestCase):
         top = headers[0]
         self.assertIn("CCSDS", top["pattern_name"])
         self.assertEqual(top["first_offset"], 20)
+
+    def test_short_pattern_can_decline_false_alarm_budget(self):
+        self.assertEqual(chance_threshold(n_bits=10_000, pattern_len=7), -1)
 
     def test_candidate_payload_extraction(self):
         ccsds_sync = KNOWN_SYNC_WORDS["CCSDS 32-bit (0x1ACFFC1D)"]

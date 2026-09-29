@@ -1,0 +1,23 @@
+{
+  "type": "web_service",
+  "name": "sigma-api",
+  "ownerId": "tea-d5f509e3jp1c73blf1ug",
+  "repo": "https://github.com/KingSahil/SIGMA",
+  "branch": "master",
+  "autoDeploy": "yes",
+  "serviceDetails": {
+    "env": "python",
+    "region": "singapore",
+    "plan": "free",
+    "healthCheckPath": "/health",
+    "envSpecificDetails": {
+      "buildCommand": "pip install --upgrade pip && pip install -r requirements.txt",
+      "startCommand": "uvicorn api:app --host 0.0.0.0 --port $PORT"
+    },
+    "envVars": [
+      { "key": "PYTHON_VERSION", "value": "3.11.9" },
+      { "key": "SIGMA_MAX_UPLOAD_BYTES", "value": "536870912" },
+      { "key": "SIGMA_MAX_ANALYSIS_SAMPLES", "value": "1000000" }
+    ]
+  }
+}

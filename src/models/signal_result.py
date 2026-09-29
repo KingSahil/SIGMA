@@ -15,6 +15,8 @@ def _to_serializable(val: Any) -> Any:
     """Helper to convert NumPy and custom objects into JSON-serializable primitives."""
     if isinstance(val, (np.integer, int)):
         return int(val)
+    elif isinstance(val, (complex, np.complexfloating)):
+        return {"r": float(val.real), "i": float(val.imag)}
     elif isinstance(val, (np.floating, float)):
         return float(val) if not np.isnan(val) and not np.isinf(val) else None
     elif isinstance(val, np.ndarray):

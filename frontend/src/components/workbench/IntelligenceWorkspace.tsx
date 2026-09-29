@@ -35,14 +35,18 @@ interface IntelligenceWorkspaceProps {
   spectralData: SpectralAnalysisResult | null;
   apiResult?: SigmaRecoveryResult | null;
   apiPlots?: SigmaPlotData | null;
-  requestedView?: WorkspaceView;
+  initialView?: WorkspaceView;
+  view?: WorkspaceView;
+  onViewChange?: (view: WorkspaceView) => void;
 }
 
-export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null, apiPlots = null, requestedView }: IntelligenceWorkspaceProps) {
-  const [view, setView] = useState<WorkspaceView>('signals');
-  useEffect(() => {
-    if (requestedView) setView(requestedView);
-  }, [requestedView]);
+export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null, apiPlots = null, initialView = 'signals', view: controlledView, onViewChange }: IntelligenceWorkspaceProps) {
+  const [internalView, setInternalView] = useState<WorkspaceView>(initialView);
+  const view = controlledView ?? internalView;
+  const setView = (next: WorkspaceView) => {
+    if (controlledView === undefined) setInternalView(next);
+    onViewChange?.(next);
+  };
   const [selectedSignal, setSelectedSignal] = useState(sampleSignals[0].id);
   const [feedbackLabel, setFeedbackLabel] = useState('QPSK');
   const [feedbackNote, setFeedbackNote] = useState('');
@@ -103,6 +107,7 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
     snr: apiResult?.signal_metrics?.snr_str ?? (isLiveCapture ? (apiPlots?.snr_db !== undefined ? `${apiPlots.snr_db.toFixed(1)} dB (FFT estimate)` : 'Not measured') : spectralData ? `${spectralData.snrDb.toFixed(1)} dB` : 'Not available'),
     signals: shownSignals,
     plotData: apiPlots,
+    spectralData,
     classificationEvidence: apiResult?.classification?.confidence_evidence,
     demodulationStatus: apiResult?.recovery?.demodulation_status,
     deinterleavingStatus: apiResult?.deinterleaving?.status,
@@ -140,7 +145,32 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
   };
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-5" id="signal-intelligence">
+      {/* Sticky top quick-access bar — keeps the Multimodal classifier one click away while scrolling */}
+      <div className="sticky top-14 z-30 -mx-3 border-b border-zinc-800 bg-[#09090b]/95 px-3 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2">
+          <span className="mr-1 hidden text-[10px] uppercase tracking-[0.18em] text-zinc-500 sm:inline">Quick access:</span>
+          <button
+            type="button"
+            onClick={() => { setView('model'); document.getElementById('signal-intelligence')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold transition-colors ${view === 'model' ? 'bg-cyan-400 text-black' : 'bg-cyan-950/40 text-cyan-200 ring-1 ring-cyan-800/70 hover:bg-cyan-900/60 hover:text-white'}`}
+            aria-current={view === 'model' ? 'page' : undefined}
+          >
+            <span aria-hidden>◈</span> Multimodal classifier
+          </button>
+          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Investigation views (quick access)">
+            {([
+              ['signals', 'Signals'],
+              ['analyst', 'AI analyst'],
+              ['reports', 'Reports'],
+            ] as const).map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} className={`px-3 py-2 text-xs transition-colors ${view === id ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
       <div className="flex flex-col gap-4 border-b border-zinc-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-400">Investigation workspace</p>
@@ -150,6 +180,7 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
         <div className="flex flex-wrap gap-1 border border-zinc-800 bg-zinc-950 p-1" role="tablist" aria-label="Investigation views">
           {([
             ['signals', 'Signals'],
+            ['model', 'Multimodal classifier'],
             ['analyst', 'AI analyst'],
             ['reports', 'Reports'],
           ] as const).map(([id, label]) => (
@@ -175,18 +206,18 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
             <div className="mt-5 overflow-x-auto">
               <div className="min-w-[560px]">
                 {isLiveCapture && !energyCandidates.length ? <div className="border-y border-zinc-800 py-8 text-center text-xs text-zinc-500">{apiPlots ? 'No thresholded energy regions found in the returned frames.' : 'Run raw IQ analysis to build a quick-look event map. WAV event segmentation is unavailable.'}</div> : <>
-                <div className="mb-2 flex justify-between font-mono text-[10px] text-zinc-500"><span>0.0 s</span><span>{isLiveCapture ? `${((apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 0) / 3).toFixed(2)} s` : '1.5 s'}</span><span>{isLiveCapture ? `${(2 * (apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 0) / 3).toFixed(2)} s` : '3.0 s'}</span><span>{isLiveCapture ? `${(apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 0).toFixed(2)} s` : '4.5 s'}</span></div>
-                <div className="space-y-2 border-y border-zinc-800 py-3">
-                  {shownSignals.map((signal, index) => (
-                    <button key={signal.id} type="button" onClick={() => setSelectedSignal(signal.id)} className={`grid w-full grid-cols-[72px_1fr] items-center gap-3 rounded-sm px-2 py-2 text-left transition-colors ${selectedSignal === signal.id ? 'bg-cyan-950/30 ring-1 ring-cyan-800/70' : 'hover:bg-zinc-900'}`}>
-                      <span className="font-mono text-[11px] text-zinc-300">{signal.id}</span>
-                      <span className="relative h-6 border-l border-zinc-800 bg-zinc-950">
-                        {isLiveCapture && energyCandidates[index] ? <span className={`absolute top-1 h-4 ${selectedSignal === signal.id ? 'bg-cyan-400/80' : 'bg-amber-500/70'}`} style={{ left: `${energyCandidates[index].startSeconds / (apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 1) * 100}%`, width: `${Math.max(2, (energyCandidates[index].endSeconds - energyCandidates[index].startSeconds) / (apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 1) * 100)}%` }} /> : !isLiveCapture && <span className={`absolute top-1 h-4 ${index === 0 ? 'left-[7%] w-[34%]' : index === 1 ? 'left-[38%] w-[44%]' : 'left-[66%] w-[21%]'} ${selectedSignal === signal.id ? 'bg-cyan-400/80' : index === 2 ? 'bg-amber-500/60' : 'bg-sky-700/80'}`} />}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-zinc-500"><span className="flex items-center gap-1.5"><i className={`h-2 w-2 ${isLiveCapture ? 'bg-amber-500/70' : 'bg-sky-700'}`} />{isLiveCapture ? 'Energy candidate' : 'Illustrative event'}</span>{!isLiveCapture && <span>Event times are illustrative</span>}</div>
+                  <div className="mb-2 flex justify-between font-mono text-[10px] text-zinc-500"><span>0.0 s</span><span>{isLiveCapture ? `${((apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 0) / 3).toFixed(2)} s` : '1.5 s'}</span><span>{isLiveCapture ? `${(2 * (apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 0) / 3).toFixed(2)} s` : '3.0 s'}</span><span>{isLiveCapture ? `${(apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 0).toFixed(2)} s` : '4.5 s'}</span></div>
+                  <div className="space-y-2 border-y border-zinc-800 py-3">
+                    {shownSignals.map((signal, index) => (
+                      <button key={signal.id} type="button" onClick={() => setSelectedSignal(signal.id)} className={`grid w-full grid-cols-[72px_1fr] items-center gap-3 rounded-sm px-2 py-2 text-left transition-colors ${selectedSignal === signal.id ? 'bg-cyan-950/30 ring-1 ring-cyan-800/70' : 'hover:bg-zinc-900'}`}>
+                        <span className="font-mono text-[11px] text-zinc-300">{signal.id}</span>
+                        <span className="relative h-6 border-l border-zinc-800 bg-zinc-950">
+                          {isLiveCapture && energyCandidates[index] ? <span className={`absolute top-1 h-4 ${selectedSignal === signal.id ? 'bg-cyan-400/80' : 'bg-amber-500/70'}`} style={{ left: `${energyCandidates[index].startSeconds / (apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 1) * 100}%`, width: `${Math.max(2, (energyCandidates[index].endSeconds - energyCandidates[index].startSeconds) / (apiResult?.input_metadata?.duration_seconds ?? metadata?.durationSeconds ?? 1) * 100)}%` }} /> : !isLiveCapture && <span className={`absolute top-1 h-4 ${index === 0 ? 'left-[7%] w-[34%]' : index === 1 ? 'left-[38%] w-[44%]' : 'left-[66%] w-[21%]'} ${selectedSignal === signal.id ? 'bg-cyan-400/80' : index === 2 ? 'bg-amber-500/60' : 'bg-sky-700/80'}`} />}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-zinc-500"><span className="flex items-center gap-1.5"><i className={`h-2 w-2 ${isLiveCapture ? 'bg-amber-500/70' : 'bg-sky-700'}`} />{isLiveCapture ? 'Energy candidate' : 'Illustrative event'}</span>{!isLiveCapture && <span>Event times are illustrative</span>}</div>
                 </>}
               </div>
             </div>
@@ -250,7 +281,7 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
             <div className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-cyan-400" /><h3 className="text-sm font-semibold text-white">Ask the signal analyst</h3><span className={`ml-auto border px-2 py-1 text-[10px] ${ragState === 'ready' ? 'border-emerald-900/70 text-emerald-300' : 'border-zinc-700 text-zinc-500'}`}>{ragState === 'ready' ? 'GEMINI READY' : ragState === 'key_missing' ? 'GEMINI KEY REQUIRED' : ragState === 'offline' ? 'API RESTART REQUIRED' : 'CHECKING SERVICE'}</span></div>
             <p className="mt-2 font-sans text-xs text-zinc-500">Answers retrieve project references and this capture’s structured DSP results. The model explains evidence; it does not determine signal measurements.</p>
             <div className="mt-4 flex flex-wrap gap-2">{['Why this modulation?', 'What is still unknown?', 'Explain the recovery result'].map((prompt) => <button key={prompt} type="button" onClick={() => setRagQuestion(prompt)} className="border border-zinc-800 px-2.5 py-1.5 text-[10px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200">{prompt}</button>)}</div>
-            <form onSubmit={submitRAGQuestion} className="mt-3 flex gap-2"><input value={ragQuestion} onChange={(event) => setRagQuestion(event.target.value)} maxLength={1200} placeholder="Ask about this analysis or RF references" className="min-w-0 flex-1 border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-xs text-white placeholder:text-zinc-600"/><button disabled={ragLoading || !ragQuestion.trim()} type="submit" aria-label="Ask analyst" className="flex shrink-0 items-center gap-2 bg-zinc-100 px-3 text-xs font-semibold text-black disabled:opacity-50">{ragLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}<span className="hidden sm:inline">Ask</span></button></form>
+            <form onSubmit={submitRAGQuestion} className="mt-3 flex gap-2"><input value={ragQuestion} onChange={(event) => setRagQuestion(event.target.value)} maxLength={1200} placeholder="Ask about this analysis or RF references" className="min-w-0 flex-1 border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-xs text-white placeholder:text-zinc-600" /><button disabled={ragLoading || !ragQuestion.trim()} type="submit" aria-label="Ask analyst" className="flex shrink-0 items-center gap-2 bg-zinc-100 px-3 text-xs font-semibold text-black disabled:opacity-50">{ragLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}<span className="hidden sm:inline">Ask</span></button></form>
             {ragError && <p role="alert" className="mt-3 border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">{ragError}</p>}
             {ragAnswer && <div className="mt-5 space-y-4 border-t border-zinc-800 pt-4"><div><p className={mutedLabel}>Grounded interpretation</p><p className="mt-2 whitespace-pre-wrap font-sans text-sm leading-relaxed text-zinc-200">{ragAnswer.answer}</p></div>
               {ragAnswer.evidence.length > 0 && <div><p className={mutedLabel}>Retrieved evidence · {ragAnswer.evidence.length}</p><ul className="mt-2 space-y-2">{ragAnswer.evidence.map((source) => <li key={source.id} className="border border-zinc-800 bg-zinc-950 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium text-zinc-200">{source.title}</span><span className="font-mono text-[10px] text-cyan-400">{Math.round(source.score * 100)}% match</span></div><p className="mt-1 text-[10px] text-zinc-500">{source.source} · {source.kind.replaceAll('_', ' ')}</p><p className="mt-2 line-clamp-4 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-zinc-400">{source.content}</p></li>)}</ul></div>}
@@ -290,7 +321,7 @@ export function IntelligenceWorkspace({ metadata, spectralData, apiResult = null
             <div><p className={mutedLabel}>Recording information</p><dl className="mt-3 space-y-2 text-xs">{[["Format", reportDetails.format], ["Sample rate", reportDetails.sampleRate], ["Center frequency", reportDetails.centerFrequency], ["Duration", reportDetails.duration]].map(([label, value]) => <div key={label} className="flex justify-between gap-3 border-b border-zinc-900 pb-2"><dt className="text-zinc-500">{label}</dt><dd className="text-zinc-200">{value}</dd></div>)}</dl></div>
             <div><p className={mutedLabel}>Signal characteristics</p><dl className="mt-3 space-y-2 text-xs">{[["Modulation", reportDetails.modulation], ["Bandwidth", reportDetails.bandwidth], ["SNR", reportDetails.snr], ["Symbol rate", apiResult?.signal_metrics?.symbol_rate_str ?? 'Not available'], ["FEC / interleaving", `${apiResult?.fec?.status ?? 'Unknown'} / ${apiResult?.deinterleaving?.status ?? 'Unknown'}`]].map(([label, value]) => <div key={label} className="flex justify-between gap-3 border-b border-zinc-900 pb-2"><dt className="text-zinc-500">{label}</dt><dd className="text-zinc-200">{value}</dd></div>)}</dl></div>
           </div>
-            <div className="mt-5 border-t border-zinc-800 pt-4"><p className={mutedLabel}>Included sections</p><div className="mt-3 flex flex-wrap gap-2">{['Recording details', 'Energy candidates', 'Classification evidence', 'Demodulation & FEC status', 'Analyst labels', 'Available visual diagnostics', 'Method limitations'].map((item) => <span key={item} className="border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-[10px] text-zinc-400">{item}</span>)}</div><p className="mt-4 font-sans text-[11px] leading-relaxed text-zinc-500">{isLiveCapture ? 'The dossier uses current API results and measured FFT frames when available. Values not returned by the API remain marked unavailable.' : 'This sample preview contains illustrative rows and plots; upload a capture and run analysis to generate a measured dossier.'}</p></div>
+          <div className="mt-5 border-t border-zinc-800 pt-4"><p className={mutedLabel}>Included sections</p><div className="mt-3 flex flex-wrap gap-2">{['Recording details', 'Energy candidates', 'Classification evidence', 'Demodulation & FEC status', 'Analyst labels', 'Available visual diagnostics', 'Method limitations'].map((item) => <span key={item} className="border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-[10px] text-zinc-400">{item}</span>)}</div><p className="mt-4 font-sans text-[11px] leading-relaxed text-zinc-500">{isLiveCapture ? 'The dossier uses current API results and measured FFT frames when available. Values not returned by the API remain marked unavailable.' : 'This sample preview contains illustrative rows and plots; upload a capture and run analysis to generate a measured dossier.'}</p></div>
         </section>
       )}
     </section>

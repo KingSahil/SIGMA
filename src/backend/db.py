@@ -97,6 +97,8 @@ def update_job(job_id: str, **values: Any) -> None:
 
 
 def save_result(analysis_id: str, signal_id: str, result: dict[str, Any]) -> None:
+    # analysis_id is the primary key, so each analysis keeps its own row and
+    # re-analysing a signal no longer overwrites the previous run's result.
     with connection() as conn:
         conn.execute("INSERT OR REPLACE INTO analysis_results VALUES (?, ?, ?, ?)", (analysis_id, signal_id, json.dumps(result), _now()))
 
@@ -108,8 +110,9 @@ def get_result(analysis_id: str) -> dict[str, Any] | None:
 
 
 def latest_result_for_signal(signal_id: str) -> dict[str, Any] | None:
+    # analysis_jobs keys its rows on `id`; there is no `analysis_id` column.
     with connection() as conn:
-        row = conn.execute("SELECT analysis_id FROM analysis_jobs WHERE signal_id = ? AND status = 'COMPLETED' ORDER BY updated_at DESC LIMIT 1", (signal_id,)).fetchone()
+        row = conn.execute("SELECT id FROM analysis_jobs WHERE signal_id = ? AND status = 'COMPLETED' ORDER BY updated_at DESC LIMIT 1", (signal_id,)).fetchone()
     return get_result(row[0]) if row else None
 
 

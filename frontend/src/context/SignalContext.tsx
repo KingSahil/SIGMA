@@ -27,7 +27,7 @@ import {
   generateMockFec,
   generateMockCorrelation,
 } from '../lib/dsp-mock';
-import { analyzeRawIq, recoverSignal, SigmaAdvancedResult, SigmaRecoveryResult } from '../lib/sigma-api';
+import { analyzeRawIq, recoverSignal, uploadSignal, getAnalysis, fetchSpectrum, fetchConstellation, fetchSpectrogram, SigmaAdvancedResult, SigmaRecoveryResult } from '../lib/sigma-api';
 
 interface SignalContextType {
   apiStatus: 'checking' | 'connected' | 'disconnected';
@@ -219,6 +219,24 @@ export function SignalProvider({ children }: { children: ReactNode }) {
     setDeinterleaveData(null);
     setFecData(null);
     setCorrelationData(null);
+
+    // Register the capture with the backend. Without this the signal id stays
+    // null and the queued-analysis path below can never run. IQ format is not
+    // guessed: the server rejects raw IQ that declares no encoding.
+    try {
+      const iqFormat = ext === '.iq' ? (file.name.toLowerCase().includes('int16') || file.name.toLowerCase().includes('sc16') ? 'int16' : 'complex64') : undefined;
+      const uploaded = await uploadSignal(file, { sampleRate: resolvedRate || undefined, iqFormat });
+      setBackendSignalId(uploaded.signal_id);
+      setMetadata((current) => current ? {
+        ...current,
+        sampleRateHz: Number(uploaded.metadata?.sample_rate) || current.sampleRateHz,
+        totalSamples: Number(uploaded.metadata?.num_samples) || current.totalSamples,
+        durationSeconds: Number(uploaded.metadata?.duration) || current.durationSeconds,
+      } : current);
+    } catch (error) {
+      setBackendSignalId(null);
+      setApiError(error instanceof Error ? error.message : 'Upload failed');
+    }
   };
 
   const runSpectralAnalysis = async () => {
@@ -288,12 +306,25 @@ export function SignalProvider({ children }: { children: ReactNode }) {
         }
       };
       connectProgress();
+      // Poll the slim status endpoint. Previously this loop ignored non-OK
+      // responses and missing jobs, so a 404 or a FAILED job kept it busy for
+      // the full 60 attempts (~5 minutes with large payloads).
+      const pollStarted = Date.now();
+      const pollLimitMs = 90_000;
       for (let attempt = 0; attempt < 60; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 300));
+        if (Date.now() - pollStarted > pollLimitMs) break;
         const status = await fetch(`${apiBase}/api/analysis/${analysisId}`);
-        const body = await status.json();
-        if (body.data?.job?.status === 'FAILED') throw new Error(body.data.job.error || 'Signal analysis failed');
+        if (status.status === 404) throw new Error('Analysis was not found on the server.');
+        const body = await status.json().catch(() => null);
+        const job = body?.data?.job;
+        if (!job) {
+          if (!status.ok) throw new Error(`Analysis status check failed (HTTP ${status.status})`);
+          continue;
+        }
+        if (job.status === 'FAILED') throw new Error(job.error || 'Signal analysis failed');
         if (body.data?.result) { result = body.data.result; break; }
+        if (job.status === 'COMPLETED') break;
       }
       closeSocket();
       if (!result) throw new Error('Analysis timed out');
@@ -312,32 +343,52 @@ export function SignalProvider({ children }: { children: ReactNode }) {
           num_samples: result.num_samples,
         },
         signal_metrics: {
+          // The analysis engine measures occupied bandwidth, not symbol rate.
+          // Labelling bandwidth as symbol rate produced a plausible wrong
+          // number, so report the measured quantity under its own name.
           snr_str: Number.isFinite(result.snr) ? `${Number(result.snr).toFixed(1)} dB` : 'Not available',
-          symbol_rate_str: Number.isFinite(result.bandwidth) ? `${(result.bandwidth / 1e3).toFixed(1)} ksym/s` : 'Not available',
-          symbol_rate_lock: result.processing_status || 'Completed',
+          symbol_rate_str: 'Not measured by this endpoint',
+          symbol_rate_lock: Number.isFinite(result.bandwidth) ? `Occupied bandwidth ${(result.bandwidth / 1e3).toFixed(1)} kHz` : 'Not available',
         },
         classification: {
           modulation: result.classification?.modulation || 'Unclassified',
-          confidence_evidence: result.classification?.mode || 'Measured from uploaded signal.',
+          confidence_evidence: result.classification?.confidence ?? result.classification?.mode ?? 'Not available',
         },
         recovery: {
           demodulation_status: result.processing_status || 'Completed',
-          n_symbols: Number(result.num_samples || 0),
+          n_symbols: undefined,
           bits: [],
-          diagnostics: { carrier_frequency_hz: result.carrier_frequency },
+          diagnostics: {
+            carrier_frequency_hz: result.carrier_frequency,
+            peak_frequency_hz: result.peak_frequency,
+            occupied_bandwidth_hz: result.bandwidth,
+          },
         },
         overall_status: result.processing_status || 'Completed',
       });
 
-      setApiPlots({
-        spectrum_db: Array.isArray(spectrum.power) ? spectrum.power : [],
-        frequencies_norm: Array.isArray(spectrum.frequencies) ? spectrum.frequencies : [],
-        constellation_i: Array.isArray(constellation.i) ? constellation.i : [],
-        constellation_q: Array.isArray(constellation.q) ? constellation.q : [],
-        waterfall_db: Array.isArray(spectrogram.power) ? spectrogram.power : [],
-        snr_db: typeof result.snr === 'number' ? result.snr : undefined,
-        rms_power_dbfs: typeof result.signal_power === 'number' ? result.signal_power : undefined,
-      });
+      // Pull plot series from their dedicated endpoints. They are deliberately
+      // excluded from the polled result payload to keep status checks small.
+      const signalIdForPlots = backendSignalId;
+      if (signalIdForPlots) {
+        try {
+          const [spec, constel] = await Promise.all([
+            fetchSpectrum(signalIdForPlots),
+            fetchConstellation(signalIdForPlots),
+          ]);
+          setApiPlots({
+            spectrum_db: Array.isArray(spec.power) ? spec.power : [],
+            frequencies_norm: Array.isArray(spec.frequencies) ? spec.frequencies : [],
+            constellation_i: Array.isArray(constel.i) ? constel.i : [],
+            constellation_q: Array.isArray(constel.q) ? constel.q : [],
+            snr_db: typeof result.snr === 'number' ? result.snr : undefined,
+            rms_power_dbfs: typeof result.signal_power === 'number' ? result.signal_power : undefined,
+          });
+        } catch {
+          // Plot retrieval is best-effort; measured metrics above stand alone.
+          setApiPlots(null);
+        }
+      }
 
       setSpectralData({
         frequencies: Array.isArray(spectrum.frequencies) ? spectrum.frequencies.map((f: number) => (f + (result.center_frequency || 0)) / 1e6) : [],

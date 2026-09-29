@@ -2,6 +2,7 @@
 Integration tests for the complete SIGMA Recovery Orchestrator Pipeline.
 """
 
+import json
 import os
 import sys
 import unittest
@@ -66,6 +67,12 @@ class TestPipeline(unittest.TestCase):
         )
         # Should decline demodulation rather than guess
         self.assertIn(result.recovery.demodulation_status, ["DECLINED", "NO CLOCK", "FAILED"])
+
+    def test_result_serializes_complex_recovery_symbols(self):
+        result = SignalResult()
+        result.recovery.symbols = [1 + 2j]
+        payload = json.loads(result.to_json())
+        self.assertEqual(payload["recovery"]["symbols"], [{"r": 1.0, "i": 2.0}])
 
 
 if __name__ == "__main__":

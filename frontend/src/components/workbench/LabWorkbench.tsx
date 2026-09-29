@@ -75,6 +75,15 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'fingerprinting' | 'error-control' | 'comparison'>('analysis');
   const apiOnline = apiStatus === 'connected';
 
+  const openMultimodalClassifier = () => {
+    setWorkspace('intelligence');
+    setIntelligenceView('model');
+    // Keep the sticky quick-access bar + classifier content at the top of the viewport.
+    requestAnimationFrame(() => {
+      document.getElementById('signal-intelligence')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   const pipelineStages = [
     { id: 'spectral', label: 'SPECTRAL ANALYSIS', icon: Activity },
     { id: 'modulation', label: 'MODULATION', icon: Radio },
@@ -172,6 +181,16 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
           </button>
 
           <button
+            type="button"
+            onClick={openMultimodalClassifier}
+            title="Jump straight to the Multimodal classifier"
+            className={`flex items-center gap-1.5 px-3 py-1.5 border transition-all cursor-pointer ${workspace === 'intelligence' && intelligenceView === 'model' ? 'border-cyan-400 bg-cyan-950/40 text-cyan-100' : 'border-cyan-900/60 bg-cyan-950/20 text-cyan-200 hover:border-cyan-700 hover:text-white'}`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            <span>MULTIMODAL CLASSIFIER</span>
+          </button>
+
+          <button
             onClick={handleRunAll}
             disabled={isPipelineRunning}
             className="flex items-center gap-2 px-4 py-1.5 bg-zinc-100 hover:bg-white text-black font-semibold tracking-wider transition-all cursor-pointer disabled:opacity-50"
@@ -226,7 +245,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
       {/* Main Lab Screen Area */}
       <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 space-y-6 p-3 sm:p-6">
         {workspace === 'intelligence' ? (
-          <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} requestedView={intelligenceView} />
+          <IntelligenceWorkspace metadata={metadata} spectralData={spectralData} apiResult={apiResult} apiPlots={apiPlots} view={intelligenceView} onViewChange={setIntelligenceView} />
         ) : workspace === 'fingerprinting' ? (
           <BlockchainFingerprintWorkspace capture={uploadedFile} metadata={metadata} spectralData={spectralData} apiResult={apiResult} />
         ) : workspace === 'error-control' ? (
@@ -749,6 +768,7 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
                   signals: [],
                   isPreview: !uploadedFile,
                   plotData: apiPlots,
+                  spectralData,
                   classificationEvidence: apiResult?.classification?.confidence_evidence,
                   demodulationStatus: apiResult?.recovery?.demodulation_status,
                   deinterleavingStatus: apiResult?.deinterleaving?.status,
