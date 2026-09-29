@@ -372,6 +372,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
   return (
     <SignalContext.Provider
       value={{
+        apiStatus,
         stage,
         setStage,
         mode,

@@ -69,19 +69,8 @@ export function LabWorkbench({ onBackToOverview }: LabWorkbenchProps) {
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
-<<<<<<< HEAD
   const [pipelineError, setPipelineError] = useState<string | null>(null);
-  const [workspace, setWorkspace] = useState<'analysis' | 'intelligence'>('analysis');
-=======
   const [workspace, setWorkspace] = useState<'analysis' | 'intelligence' | 'error-control' | 'comparison'>('analysis');
-  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    checkSigmaHealth(controller.signal).then(() => setApiOnline(true)).catch(() => setApiOnline(false));
-    return () => controller.abort();
-  }, []);
->>>>>>> bc847d8bcc1e0c1ef17672a57d155691e7701099
 
   const pipelineStages = [
     { id: 'spectral', label: 'SPECTRAL ANALYSIS', icon: Activity },
